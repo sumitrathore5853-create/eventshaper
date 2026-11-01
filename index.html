@@ -9,10 +9,11 @@
 <style>
 :root{--bg:#F2F4F8;--card:#fff;--ink:#14182F;--mute:#5A6078;--line:#DDE1EB;--brand:#2B2F77;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1224;--card:#191D38;--ink:#EEF0FA;--mute:#A3A9C4;--line:#2B3157;--brand:#8E96FF;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0F1224;--card:#191D38;--ink:#EEF0FA;--mute:#A3A9C4;--line:#2B3157;--brand:#8E96FF;color-scheme:dark}
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 'DM Sans',system-ui,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.55 'DM Sans',system-ui,sans-serif}
 h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif;line-height:1.15;margin:0}
 button,input,select,textarea{font:inherit;color:inherit}
 .wrap{max-width:1040px;margin:0 auto;padding:0 18px}
@@ -79,7 +80,7 @@ const seed=()=>({
 let db,me=null;
 try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!db||!db.clubs)db=seed();
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));return true}catch(e){toast('Jagah bhar gayi, kam ya chhoti photos daalo');return false}};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const club=id=>db.clubs.find(c=>c.id==id);
@@ -90,9 +91,100 @@ function toast(t){const d=document.createElement('div');d.className='toast';d.te
 function modal(html){$('#layer').innerHTML='<div class="modal" onclick="if(event.target===this)closeM()"><div class="box">'+html+'</div></div>'}
 function closeM(){$('#layer').innerHTML=''}
 
+const PK='eventShaperPrefs';
+let prefs={theme:'auto',size:'normal'};
+try{prefs=Object.assign(prefs,JSON.parse(localStorage.getItem(PK))||{})}catch(e){}
+function applyPrefs(){
+ const r=document.documentElement;
+ if(prefs.theme==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',prefs.theme);
+ r.style.fontSize={small:'14px',normal:'16px',large:'18px'}[prefs.size]||'16px';
+ try{localStorage.setItem(PK,JSON.stringify(prefs))}catch(e){}
+}
+function setPref(k,v){prefs[k]=v;applyPrefs();settingsM()}
+function settingsM(){
+ const opt=(k,v,l)=>`<button class="btn sm ${prefs[k]===v?'':'ghost'}" onclick="setPref('${k}','${v}')">${l}</button>`;
+ const box=(t,d,b)=>`<div class="panel"><b>${t}</b><p class="mute" style="margin:4px 0 10px">${d}</p><div class="row" style="justify-content:flex-start">${b}</div></div>`;
+ modal(`<h2 style="margin-top:0">Settings</h2>`
+ +box('Theme','Screen ka rang chuno.',opt('theme','auto','Auto')+opt('theme','light','Light')+opt('theme','dark','Dark'))
+ +box('Text size','Padhne me aasani ke liye.',opt('size','small','Chhota')+opt('size','normal','Normal')+opt('size','large','Bada'))
+ +(me&&me.role==='faculty'?box('Faculty settings','Apni details aur club gallery yahan se badlo.',`<button class="btn sm" onclick="detM()">Meri details</button><button class="btn sm" onclick="galM()">Club gallery</button>`):'')
+ +(me&&me.role==='admin'?box('Admin settings','Sirf admin ke liye.',`<button class="btn sm" onclick="clubM()">Naya club</button><button class="btn sm" onclick="facM()">Faculty jodo</button><button class="btn sm" onclick="evM()">Naya event</button><button class="btn sm" onclick="apprM()">Approval (${db.clubs.filter(c=>c.fstatus==='review').length})</button>`):'')
+ +(me&&me.role==='admin'?box('Data','Saare events aur registrations demo data se badal jayenge.',`<button class="btn sm red" onclick="if(confirm('Saara data demo data se badal jayega. Pakka?')){db=seed();save();me=null;closeM();go('home');toast('Data reset ho gaya')}">Data reset karo</button>`):'')
+ +`<div class="panel" style="margin-bottom:0"><b>About</b><p class="mute" style="margin:4px 0 0">EventShaper v1.0 | College Club Event Management | Malwa Institute of Science and Technology</p></div><p style="margin:14px 0 0;text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
+}
+applyPrefs();
+let tmp={};
+function readImg(f,max){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const s=Math.min(1,max/i.width),c=document.createElement('canvas');c.width=i.width*s;c.height=i.height*s;c.getContext('2d').drawImage(i,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.65))};i.onerror=()=>res(null);i.src=r.result};r.onerror=()=>res(null);r.readAsDataURL(f)})}
+async function pickImg(inp){tmp.ev=inp.files[0]?await readImg(inp.files[0],640):null;toast(tmp.ev?'Photo chun li':'Photo nahi mili')}
+const gal=c=>{const g=c.gallery||[];return '<h2>Gallery</h2>'+(g.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${g.map(x=>x.t==='p'?`<img class="logo" style="height:140px;object-fit:cover" src="${x.s}" alt="Event photo">`:`<a class="btn" style="text-align:center;text-decoration:none" href="${esc(x.s)}" target="_blank" rel="noopener">Video dekho</a>`).join('')}</div>`:'<p class="mute">Gallery jald aayegi. Pehle event ke baad yahan photos aur videos dikhenge.</p>')};
+function galM(){
+ const c=club(me.clubId),g=c.gallery||[];
+ modal(`<h2 style="margin-top:0">Club gallery</h2><div class="f" style="grid-template-columns:1fr"><div><label>Purani photos jodo</label><input type="file" accept="image/*" multiple onchange="addPhotos(this)"></div><div><label>Video ka link (YouTube ya Drive)</label><input id="g_url" placeholder="https://..."></div></div><p><button class="btn sm" onclick="addVid()">Video link jodo</button></p>`+(g.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr))">${g.map((x,i)=>`<div>${x.t==='p'?`<img class="logo" style="height:80px;object-fit:cover" src="${x.s}" alt="">`:'<div class="panel" style="padding:8px;font-size:13px">Video</div>'}<button class="btn sm red" onclick="delG(${i})">Hatao</button></div>`).join('')}</div>`:'<p class="mute">Abhi kuch nahi joda.</p>')+`<p style="text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
+}
+async function addPhotos(inp){
+ if(!me||me.role!=='faculty')return;
+ const c=club(me.clubId);c.gallery=c.gallery||[];
+ for(const f of inp.files){const d=await readImg(f,640);if(d)c.gallery.push({t:'p',s:d})}
+ save();galM();
+}
+function addVid(){
+ if(!me||me.role!=='faculty')return;
+ const u=$('#g_url').value.trim();
+ if(!(u.startsWith('http://')||u.startsWith('https://')))return toast('Sahi link daalo (https:// se shuru)');
+ const c=club(me.clubId);c.gallery=c.gallery||[];c.gallery.push({t:'v',s:u});save();galM();
+}
+function delG(i){if(!me||me.role!=='faculty')return;club(me.clubId).gallery.splice(i,1);save();galM()}
+function detM(){
+ const c=club(me.clubId),n=c.fstatus==='pending'?'':c.fname;
+ modal(`<h2 style="margin-top:0">Meri details</h2><p class="mute">Admin ke approve karne ke baad ye club page par dikhengi.</p><div class="f" style="grid-template-columns:1fr"><div><label>Naam</label><input id="d_name" value="${esc(n)}"></div><div><label>Phone</label><input id="d_phone" value="${esc(c.fphone)}"></div><div><label>Naya password (optional)</label><input id="d_pass" type="password"></div></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="sendDet()">Admin ko bhejo</button></p>`);
+}
+function sendDet(){
+ if(!me||me.role!=='faculty')return;
+ const c=club(me.clubId),n=$('#d_name').value.trim(),p=$('#d_phone').value.trim();
+ if(!n||!p)return toast('Naam aur phone bharein');
+ c.pending={fname:n,fphone:p,fpass:$('#d_pass').value};c.fstatus='review';save();closeM();toast('Admin ko bhej di');
+}
+function apprM(){
+ const l=db.clubs.filter(c=>c.fstatus==='review');
+ modal(`<h2 style="margin-top:0">Approval</h2>`+(l.length?l.map(c=>`<div class="panel"><b>${esc(c.name)}</b><p>${esc(c.pending.fname)}<br>${esc(c.pending.fphone)}</p><button class="btn sm" onclick="decide(${c.id},1)">Haan, approve</button> <button class="btn sm red" onclick="decide(${c.id},0)">Reject</button></div>`).join(''):'<p class="mute">Approve karne ke liye koi details nahi hain.</p>')+`<p style="text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
+}
+function decide(id,ok){
+ if(!me||me.role!=='admin')return;
+ const c=club(id),p=c.pending;
+ if(ok&&p){c.fname=p.fname;c.fphone=p.fphone;if(p.fpass)c.fpass=p.fpass;c.fstatus='ok'}else c.fstatus=c.fname==='Details jald aayengi'?'pending':'ok';
+ delete c.pending;save();apprM();toast(ok?'Approve ho gaya':'Reject kiya');
+}
+function clubM(){
+ const f=(k,l,t)=>`<div><label>${l}</label><input id="n_${k}" type="${t}"></div>`;
+ modal(`<h2 style="margin-top:0">Naya club</h2><div class="f" style="grid-template-columns:1fr">`+f('name','Club ka naam','text')+f('tag','Tag (jaise Dance Club)','text')+f('intro','Intro','text')+`<div><label>Rang</label><input id="n_color" type="color" value="#2B2F77"></div>`+f('user','Faculty username','text')+f('pass','Faculty temporary password','text')+`</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="addClub()">Club banao</button></p>`);
+}
+function addClub(){
+ if(!me||me.role!=='admin')return;
+ const v=k=>$('#n_'+k).value.trim(),u=v('user').toLowerCase();
+ if(!v('name')||!u||!v('pass'))return toast('Naam, username aur password bharein');
+ if(db.clubs.some(c=>c.fuser===u)||u==='admin')return toast('Ye username pehle se hai');
+ db.clubs.push({id:Date.now(),name:v('name'),tag:v('tag'),color:v('color'),intro:v('intro'),fname:'Details jald aayengi',fphone:'',fuser:u,fpass:v('pass'),fstatus:'pending',gallery:[]});
+ save();closeM();toast('Naya club ban gaya');go('home');
+}
+function facM(){
+ modal(`<h2 style="margin-top:0">Faculty jodo</h2><div class="f" style="grid-template-columns:1fr"><div><label>Club</label><select id="f_club">${db.clubs.filter(c=>c.fstatus==='pending').map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div><div><label>Faculty username</label><input id="f_user"></div><div><label>Temporary password</label><input id="f_pass"></div></div><p class="mute">Faculty login karke apni details bharegi, phir aap approve karoge. Sirf naye club ke liye, jiska faculty abhi tak nahi juda. Purane clubs ke faculty nahi badlenge.</p><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="addFac()">Jodo</button></p>`);
+}
+function addFac(){
+ if(!me||me.role!=='admin')return;
+ const c=club($('#f_club').value)||{},u=$('#f_user').value.trim().toLowerCase(),p=$('#f_pass').value;
+ if(!u||!p)return toast('Username aur password bharein');
+ if(db.clubs.some(x=>x.fuser===u&&x.id!==c.id)||u==='admin')return toast('Ye username pehle se hai');
+ if(c.fstatus!=='pending')return toast('Sirf naye club me faculty jod sakte ho');
+ Object.assign(c,{fuser:u,fpass:p,fstatus:'pending',fname:'Details jald aayengi',fphone:''});delete c.pending;
+ save();closeM();toast('Faculty jud gaya');
+}
+function evM(){
+ const f=(k,l,t)=>`<div><label>${l}</label><input id="e_${k}" type="${t}"></div>`;
+ modal(`<h2 style="margin-top:0">Naya event</h2><div class="f" style="grid-template-columns:1fr"><div><label>Club</label><select id="e_club">${db.clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>`+f('title','Event ka naam','text')+f('date','Date','date')+f('time','Time','time')+f('venue','Venue','text')+f('last','Registration last date','date')+f('seats','Seats','number')+`<div><label>Type</label><select id="e_type"><option>Solo</option><option>Team</option></select></div>`+f('team','Team me kitne members','number')+`<div><label>Activities</label><textarea id="e_desc" rows="3"></textarea></div>`+f('note','Kya laana hai / note','text')+`<div><label>Photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="addEv()">Save</button></p>`);
+}
 function nav(){
- $('#navr').innerHTML=me?`<span class="mute">${me.role==='admin'?'Main Admin':esc(club(me.clubId).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`
- :`<button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`;
+ $('#navr').innerHTML=me?`<span class="mute">${me.role==='admin'?'Main Admin':esc(club(me.clubId).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`
+ :`<button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`;
 }
 function go(v,id){nav();({home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0)}
 $('#logo').onclick=()=>go('home');
@@ -101,7 +193,7 @@ function eventCard(e,showClub){
  const c=club(e.clubId),n=count(e.id),full=n>=e.seats,closed=e.last<today();
  return `<div class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
  ${closed?'<span class="chip">Registration band</span>':full?'<span class="chip">Seats full</span>':`<button class="btn sm" onclick="regM(${e.id})">Register</button>`}</div>
- <p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}
+ ${e.img?`<img class="logo" style="height:170px;object-fit:cover;margin:6px 0 10px" src="${e.img}" alt="${esc(e.title)} photo">`:''}<p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}
  <span class="chip">${fdate(e.date)}, ${esc(e.time)}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span><span class="chip">Last date: ${fdate(e.last)}</span></div>`;
 }
 function home(){
@@ -114,7 +206,7 @@ function clubPage(id){
  $('#app').innerHTML=`<button class="btn ghost sm" onclick="go('home')">Wapas</button>
  <div class="panel" style="border-top:6px solid ${c.color};margin-top:12px">${logo(c,'big')}<h1 style="font-size:34px">${esc(c.name)}</h1><p class="mute">${esc(c.tag)}</p><p>${esc(c.intro)}</p>
  <p><b>Faculty coordinator:</b> ${esc(c.fname)}<br><b>Contact:</b> ${esc(c.fphone)}</p></div>
- <h2>${esc(c.name)} ke events</h2>${ev.length?ev.map(e=>eventCard(e)).join(''):'<p class="mute">Is club ka abhi koi event nahi hai.</p>'}`;
+ <h2>${esc(c.name)} ke events</h2>${ev.length?ev.map(e=>eventCard(e)).join(''):'<p class="mute">Is club ka abhi koi event nahi hai.</p>'}${gal(c)}`;
 }
 function regM(id){
  const e=db.events.find(x=>x.id==id);
@@ -157,7 +249,7 @@ function dash(){
   <div><label>Event ka naam</label><input id="e_title"></div><div><label>Date</label><input id="e_date" type="date"></div><div><label>Time</label><input id="e_time" type="time"></div>
   <div><label>Venue</label><input id="e_venue"></div><div><label>Registration last date</label><input id="e_last" type="date"></div><div><label>Kitne students (seats)</label><input id="e_seats" type="number" min="1"></div>
   <div><label>Type</label><select id="e_type"><option>Solo</option><option>Team</option></select></div><div><label>Team me kitne members</label><input id="e_team" type="number" min="1" value="1"></div>
-  <div style="grid-column:1/-1"><label>Kya kya activities hain</label><textarea id="e_desc" rows="3"></textarea></div><div style="grid-column:1/-1"><label>Kya laana hai / dress code / note</label><input id="e_note" placeholder="Jaise: College ID card, sports shoes"></div></div>
+  <div style="grid-column:1/-1"><label>Kya kya activities hain</label><textarea id="e_desc" rows="3"></textarea></div><div style="grid-column:1/-1"><label>Kya laana hai / dress code / note</label><input id="e_note" placeholder="Jaise: College ID card, sports shoes"></div><div style="grid-column:1/-1"><label>Event ki photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div></div>
   <p style="margin-bottom:0"><button class="btn" onclick="addEv()">Event save karo</button></p></div>`;
   h+=evTable(db.events.filter(e=>e.clubId==me.clubId));
  }else{
@@ -182,11 +274,11 @@ function evTable(list,all){
 // Ownership check: faculty sirf apne club ka event badal sakta hai (admin sab)
 const canEdit=e=>me&&(me.role==='admin'||(me.role==='faculty'&&e.clubId==me.clubId));
 function addEv(){
- if(!me||me.role!=='faculty')return;
+ if(!me)return;
  const v=k=>$('#e_'+k).value.trim();
- const e={id:Date.now(),clubId:me.clubId,title:v('title'),desc:v('desc'),note:v('note'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats:parseInt(v('seats'))||0,type:v('type'),team:parseInt(v('team'))||1};
+ const e={id:Date.now(),clubId:me.role==='admin'?parseInt(v('club')):me.clubId,img:tmp.ev||'',title:v('title'),desc:v('desc'),note:v('note'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats:parseInt(v('seats'))||0,type:v('type'),team:parseInt(v('team'))||1};
  if(!e.title||!e.date||!e.venue||!e.last||e.seats<1)return toast('Naam, date, venue, last date aur seats bharein');
- db.events.push(e);save();toast('Event jud gaya');dash();
+ db.events.push(e);save();tmp.ev=null;closeM();toast('Event jud gaya');dash();
 }
 function editM(id){
  const e=db.events.find(x=>x.id==id);
