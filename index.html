@@ -80,11 +80,12 @@ const seed=()=>({
 let db,me=null;
 try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!db||!db.clubs)db=seed();
+db.events.forEach(e=>{if(!e.pw)e.pw='demo123'});
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));return true}catch(e){toast('Jagah bhar gayi, kam ya chhoti photos daalo');return false}};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const club=id=>db.clubs.find(c=>c.id==id);
-const count=id=>db.regs.filter(r=>r.eventId==id).length;
+const count=id=>db.regs.filter(r=>r.eventId==id&&r.status!=='cancelled').length;
 const fdate=d=>{try{return new Date(d+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}catch(e){return d}};
 const today=()=>new Date().toISOString().slice(0,10);
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
@@ -180,11 +181,42 @@ function addFac(){
 }
 function evM(){
  const f=(k,l,t)=>`<div><label>${l}</label><input id="e_${k}" type="${t}"></div>`;
- modal(`<h2 style="margin-top:0">Naya event</h2><div class="f" style="grid-template-columns:1fr"><div><label>Club</label><select id="e_club">${db.clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>`+f('title','Event ka naam','text')+f('date','Date','date')+f('time','Time','time')+f('venue','Venue','text')+f('last','Registration last date','date')+f('seats','Seats','number')+`<div><label>Type</label><select id="e_type"><option>Solo</option><option>Team</option></select></div>`+f('team','Team me kitne members','number')+`<div><label>Activities</label><textarea id="e_desc" rows="3"></textarea></div>`+f('note','Kya laana hai / note','text')+`<div><label>Photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="addEv()">Save</button></p>`);
+ modal(`<h2 style="margin-top:0">Naya event</h2><div class="f" style="grid-template-columns:1fr"><div><label>Club</label><select id="e_club">${db.clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>`+f('title','Event ka naam','text')+f('date','Date','date')+f('time','Time','time')+f('venue','Venue','text')+f('last','Registration last date','date')+f('seats','Seats','number')+`<div><label>Type</label><select id="e_type"><option>Solo</option><option>Team</option></select></div>`+f('team','Team me kitne members','number')+`<div><label>Activities</label><textarea id="e_desc" rows="3"></textarea></div>`+f('note','Kya laana hai / note','text')+`<div><label>Photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div><div><label>Event password</label><input id="e_pw"></div></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="addEv()">Save</button></p>`);
+}
+const unlocked={};
+const unl=e=>me&&(me.role==='admin'||unlocked[e.id]===true);
+const lockBox=e=>`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><input id="pw_${e.id}" type="password" placeholder="Is event ka password" style="max-width:240px"><button class="btn sm" onclick="unlock(${e.id})">Registrations kholo</button></div>`;
+function unlock(id){
+ const e=db.events.find(x=>x.id==id);
+ if(!e||!canEdit(e))return toast('Aap dusre club ka event nahi khol sakte');
+ if($('#pw_'+id).value===e.pw){unlocked[id]=true;dash()}else toast('Password galat hai');
+}
+function setReg(id,s){
+ const r=db.regs.find(x=>x.id==id),e=r&&db.events.find(x=>x.id==r.eventId);
+ if(!r||!e||!canEdit(e))return toast('Aap ye registration nahi badal sakte');
+ if(!unl(e))return toast('Pehle event ka password daalo');
+ r.status=s;save();toast(s==='accepted'?'Registration accept ho gayi':'Registration cancel ho gayi');dash();
+}
+const stTxt=s=>({accepted:'Accept ho gayi',cancelled:'Cancel ho gayi'}[s]||'Intezar (pending)');
+function regCard(r){
+ const e=db.events.find(x=>x.id==r.eventId),c=e&&club(e.clubId);
+ return `<div class="panel"><b>${esc(e?e.title:'Event')}</b><br><small class="mute">${esc(c?c.name:'')} | ${e?fdate(e.date):''}</small><p style="margin:8px 0">Status: <b>${esc(stTxt(r.status))}</b></p><div class="mute" style="font-size:14px">Naam: ${esc(r.name)}<br>Roll: ${esc(r.roll)}<br>Branch: ${esc(r.branch)} | ${esc(r.inst)} | ${esc(r.gender)}<br>Email: ${esc(r.email)}<br>Phone: ${esc(r.phone)}${r.team?'<br>Team: '+esc(r.team):''}</div></div>`;
+}
+function confirmM(r){
+ modal(`<h2 style="margin-top:0">Registration bhej di gayi</h2><p class="mute">Faculty ya admin ke accept karne par status badlega. Status "Meri registrations" me dekh sakte ho.</p>${regCard(r)}<p style="text-align:right;margin-bottom:0"><button class="btn" onclick="closeM();go('home')">Done</button></p>`);
+}
+function myM(){
+ modal(`<h2 style="margin-top:0">Meri registrations</h2><div class="f" style="grid-template-columns:1fr"><div><label>Roll number</label><input id="m_roll"></div><div><label>Phone number</label><input id="m_phone" type="tel"></div></div><p><button class="btn" onclick="myShow()">Dekho</button></p><div id="m_out"></div><p style="text-align:right;margin-bottom:0"><button class="btn ghost" onclick="closeM()">Band karo</button></p>`);
+}
+function myShow(){
+ const ro=$('#m_roll').value.trim().toLowerCase(),ph=$('#m_phone').value.replace(/\D/g,'');
+ if(!ro||!ph)return toast('Roll aur phone dono bharein');
+ const l=db.regs.filter(r=>r.roll.toLowerCase()===ro&&r.phone.replace(/\D/g,'')===ph);
+ $('#m_out').innerHTML=l.length?l.map(r=>regCard(r)).join(''):'<p class="mute">Is roll aur phone se koi registration nahi mili.</p>';
 }
 function nav(){
- $('#navr').innerHTML=me?`<span class="mute">${me.role==='admin'?'Main Admin':esc(club(me.clubId).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`
- :`<button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`;
+ $('#navr').innerHTML=me?`<span class="mute">${me.role==='admin'?'Main Admin':esc(club(me.clubId).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`
+ :`<button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> <button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`;
 }
 function go(v,id){nav();({home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0)}
 $('#logo').onclick=()=>go('home');
@@ -223,8 +255,8 @@ function doReg(id){
  if(!r.name||!r.roll||!r.email||!r.phone)return toast('Naam, roll, email aur phone zaruri hain');
  if(count(id)>=e.seats)return toast('Seats full ho gayi');
  if(e.last<today())return toast('Registration band ho chuka hai');
- if(db.regs.some(x=>x.eventId==id&&x.roll.toLowerCase()===r.roll.toLowerCase()))return toast('Is roll number se pehle hi register ho chuka hai');
- db.regs.push(r);save();closeM();toast('Registration ho gaya!');go('home');
+ if(db.regs.some(x=>x.eventId==id&&x.status!=='cancelled'&&x.roll.toLowerCase()===r.roll.toLowerCase()))return toast('Is roll number se pehle hi register ho chuka hai');
+ r.status='pending';db.regs.push(r);if(save())confirmM(r);
 }
 function loginM(){
  modal(`<h2 style="margin-top:0">Login</h2><div class="f" style="grid-template-columns:1fr"><div><label>Username</label><input id="l_u" autocomplete="username"></div><div><label>Password</label><input id="l_p" type="password" autocomplete="current-password"></div></div>
@@ -237,7 +269,7 @@ function login(){
  else{const c=db.clubs.find(c=>c.fuser===u&&c.fpass===p);if(!c)return toast('Username ya password galat hai');me={role:'faculty',clubId:c.id}}
  closeM();toast('Login ho gaya');go('dash');
 }
-function logout(){me=null;go('home')}
+function logout(){me=null;Object.keys(unlocked).forEach(k=>delete unlocked[k]);go('home')}
 
 function dash(){
  if(!me)return go('home');
@@ -249,7 +281,7 @@ function dash(){
   <div><label>Event ka naam</label><input id="e_title"></div><div><label>Date</label><input id="e_date" type="date"></div><div><label>Time</label><input id="e_time" type="time"></div>
   <div><label>Venue</label><input id="e_venue"></div><div><label>Registration last date</label><input id="e_last" type="date"></div><div><label>Kitne students (seats)</label><input id="e_seats" type="number" min="1"></div>
   <div><label>Type</label><select id="e_type"><option>Solo</option><option>Team</option></select></div><div><label>Team me kitne members</label><input id="e_team" type="number" min="1" value="1"></div>
-  <div style="grid-column:1/-1"><label>Kya kya activities hain</label><textarea id="e_desc" rows="3"></textarea></div><div style="grid-column:1/-1"><label>Kya laana hai / dress code / note</label><input id="e_note" placeholder="Jaise: College ID card, sports shoes"></div><div style="grid-column:1/-1"><label>Event ki photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div></div>
+  <div style="grid-column:1/-1"><label>Kya kya activities hain</label><textarea id="e_desc" rows="3"></textarea></div><div style="grid-column:1/-1"><label>Kya laana hai / dress code / note</label><input id="e_note" placeholder="Jaise: College ID card, sports shoes"></div><div style="grid-column:1/-1"><label>Event ki photo (optional)</label><input type="file" accept="image/*" onchange="pickImg(this)"></div><div style="grid-column:1/-1"><label>Event password (registrations dekhne ke liye)</label><input id="e_pw" placeholder="Jaise: brain2026"></div></div>
   <p style="margin-bottom:0"><button class="btn" onclick="addEv()">Event save karo</button></p></div>`;
   h+=evTable(db.events.filter(e=>e.clubId==me.clubId));
  }else{
@@ -269,15 +301,15 @@ function evTable(list,all){
   const rs=db.regs.filter(r=>r.eventId==e.id);
   return `<div class="panel"><div class="row"><div><h3>${esc(e.title)}</h3><small class="mute">${all?esc(club(e.clubId).name)+' · ':''}${fdate(e.date)} · ${rs.length}/${e.seats} registrations</small></div>
   <div><button class="btn sm ghost" onclick="csv(${e.id})">CSV download</button> <button class="btn sm" onclick="editM(${e.id})">Edit</button> <button class="btn sm red" onclick="delEv(${e.id})">Delete</button></div></div>
-  ${rs.length?`<div class="scroll"><table><tr><th>Naam</th><th>Roll</th><th>Branch</th><th>Institute</th><th>Gender</th><th>Email</th><th>Phone</th><th>Team</th></tr>${rs.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.roll)}</td><td>${esc(r.branch)}</td><td>${esc(r.inst)}</td><td>${esc(r.gender)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.team)}</td></tr>`).join('')}</table></div>`:'<p class="mute" style="margin-bottom:0">Abhi koi registration nahi.</p>'}</div>`}).join(''):'<p class="mute">Abhi koi event nahi.</p>');
+  ${!unl(e)?lockBox(e):rs.length?`<div class="scroll"><table><tr><th>Naam</th><th>Roll</th><th>Branch</th><th>Institute</th><th>Gender</th><th>Email</th><th>Phone</th><th>Team</th><th>Status</th><th>Action</th></tr>${rs.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.roll)}</td><td>${esc(r.branch)}</td><td>${esc(r.inst)}</td><td>${esc(r.gender)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.team)}</td><td>${esc(stTxt(r.status))}</td><td><button class="btn sm" onclick="setReg(${r.id},'accepted')">Accept</button> <button class="btn sm red" onclick="setReg(${r.id},'cancelled')">Cancel</button></td></tr>`).join('')}</table></div>`:'<p class="mute" style="margin-bottom:0">Abhi koi registration nahi.</p>'}</div>`}).join(''):'<p class="mute">Abhi koi event nahi.</p>');
 }
 // Ownership check: faculty sirf apne club ka event badal sakta hai (admin sab)
 const canEdit=e=>me&&(me.role==='admin'||(me.role==='faculty'&&e.clubId==me.clubId));
 function addEv(){
  if(!me)return;
  const v=k=>$('#e_'+k).value.trim();
- const e={id:Date.now(),clubId:me.role==='admin'?parseInt(v('club')):me.clubId,img:tmp.ev||'',title:v('title'),desc:v('desc'),note:v('note'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats:parseInt(v('seats'))||0,type:v('type'),team:parseInt(v('team'))||1};
- if(!e.title||!e.date||!e.venue||!e.last||e.seats<1)return toast('Naam, date, venue, last date aur seats bharein');
+ const e={id:Date.now(),clubId:me.role==='admin'?parseInt(v('club')):me.clubId,img:tmp.ev||'',pw:v('pw'),title:v('title'),desc:v('desc'),note:v('note'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats:parseInt(v('seats'))||0,type:v('type'),team:parseInt(v('team'))||1};
+ if(!e.title||!e.date||!e.venue||!e.last||e.seats<1||!e.pw)return toast('Naam, date, venue, last date, seats aur event password bharein');
  db.events.push(e);save();tmp.ev=null;closeM();toast('Event jud gaya');dash();
 }
 function editM(id){
@@ -288,7 +320,7 @@ function editM(id){
  +f('title','Event ka naam','text',e.title)+f('date','Date','date',e.date)+f('time','Time','time',e.time)+f('venue','Venue','text',e.venue)+f('last','Registration last date','date',e.last)+f('seats','Seats','number',e.seats)
  +`<div><label>Type</label><select id="x_type"><option${e.type==='Solo'?' selected':''}>Solo</option><option${e.type==='Team'?' selected':''}>Team</option></select></div>`
  +f('team','Team me kitne members','number',e.team)
- +`<div><label>Activities</label><textarea id="x_desc" rows="3">${esc(e.desc)}</textarea></div>`+f('note','Kya laana hai / note','text',e.note||'')
+ +`<div><label>Activities</label><textarea id="x_desc" rows="3">${esc(e.desc)}</textarea></div>`+f('note','Kya laana hai / note','text',e.note||'')+f('pw','Event password','text',e.pw||'')
  +`</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="saveEv(${id})">Save</button></p>`);
 }
 function saveEv(id){
@@ -297,7 +329,7 @@ function saveEv(id){
  const v=k=>$('#x_'+k).value.trim(),seats=parseInt(v('seats'))||0;
  if(!v('title')||!v('date')||!v('venue')||!v('last'))return toast('Naam, date, venue aur last date bharein');
  if(seats<count(id))return toast('Seats '+count(id)+' se kam nahi ho sakti, itne log register ho chuke hain');
- Object.assign(e,{title:v('title'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats,type:v('type'),team:parseInt(v('team'))||1,desc:v('desc'),note:v('note')});
+ Object.assign(e,{title:v('title'),date:v('date'),time:v('time'),venue:v('venue'),last:v('last'),seats,type:v('type'),team:parseInt(v('team'))||1,desc:v('desc'),note:v('note'),pw:v('pw')||e.pw});
  save();closeM();toast('Event update ho gaya');go('dash');
 }
 function delEv(id){
@@ -312,9 +344,9 @@ function saveClub(id){
  save();toast('Club save ho gaya');
 }
 function csv(id){
- const e=db.events.find(x=>x.id==id);if(!e||!canEdit(e))return;
+ const e=db.events.find(x=>x.id==id);if(!e||!canEdit(e))return;if(!unl(e))return toast('Pehle event ka password daalo');
  const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
- const rows=[['Naam','Roll','Branch','Institute','Gender','Email','Phone','Team'],...db.regs.filter(r=>r.eventId==id).map(r=>[r.name,r.roll,r.branch,r.inst,r.gender,r.email,r.phone,r.team])];
+ const rows=[['Naam','Roll','Branch','Institute','Gender','Email','Phone','Team','Status'],...db.regs.filter(r=>r.eventId==id).map(r=>[r.name,r.roll,r.branch,r.inst,r.gender,r.email,r.phone,r.team,stTxt(r.status)])];
  const blob=new Blob([rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=e.title+'.csv';a.click();
 }
