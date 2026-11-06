@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>EventShaper</title>
+<meta name="description" content="EventShaper — College Club Event Management, Malwa Institute of Science and Technology (MIST)">
+<meta property="og:title" content="EventShaper — MIST College Club Events">
+<meta property="og:description" content="Browse all 7 college clubs, upcoming events and register online.">
+<meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=DM+Sans:wght@400;500;700&family=Noto+Sans+Devanagari:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -34,6 +38,7 @@ nav b{display:flex;align-items:center;gap:10px;font:800 22px 'Bricolage Grotesqu
 .club:hover{border-color:var(--c)}
 h2{font-size:26px;margin:30px 0 14px}
 .ev{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:14px;padding:16px;margin-bottom:12px}
+.ev.hl{outline:3px solid var(--brand);outline-offset:2px;box-shadow:0 8px 28px #0002}
 .ev h3{font-size:19px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .chip{display:inline-block;font-size:13px;padding:2px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line);margin:6px 6px 0 0}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px}
@@ -90,15 +95,23 @@ async function load(){
  db.clubs=c.map(mapC);db.events=e.map(mapE);db.gal=g;taken={};s.forEach(x=>taken[x.event_id]=+x.taken);mem={};m.forEach(x=>mem[x.club_id]=+x.total);
 }
 // ---------- preferences ----------
-const PK='eventShaperPrefs';let prefs={theme:'auto',size:'normal'};
+const PK='eventShaperPrefs';let prefs={theme:'auto',size:'normal',siteUrl:''};
 try{prefs=Object.assign(prefs,JSON.parse(localStorage.getItem(PK))||{})}catch(e){}
+const isHttpHost=()=>/^https?:$/i.test(location.protocol)&&!/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(location.hostname);
 function applyPrefs(){const r=document.documentElement;if(prefs.theme==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',prefs.theme);r.style.fontSize={small:'14px',normal:'16px',large:'18px'}[prefs.size]||'16px';try{localStorage.setItem(PK,JSON.stringify(prefs))}catch(e){}}
 function setPref(k,v){prefs[k]=v;applyPrefs();settingsM()}
+function saveSitePref(){
+ const v=($('#st_url')?.value||'').trim().replace(/\/+$/,'');
+ if(v&&!/^https:\/\/.+/i.test(v))return toast('Sahi link daalo (https:// se shuru)');
+ if(v){try{new URL(v)}catch(e){return toast('Sahi link daalo (https:// se shuru)')}}
+ prefs.siteUrl=v;applyPrefs();toast('Link save ho gaya');settingsM();
+}
 function settingsM(){
  const opt=(k,v,l)=>`<button class="btn sm ${prefs[k]===v?'':'ghost'}" onclick="setPref('${k}','${v}')">${l}</button>`;
  const box=(t,d,b)=>`<div class="panel"><b>${t}</b><p class="mute" style="margin:4px 0 10px">${d}</p><div class="row" style="justify-content:flex-start">${b}</div></div>`;
  modal(`<h2 style="margin-top:0">Settings</h2>`+box('Theme','Screen ka rang chuno.',opt('theme','auto','Auto')+opt('theme','light','Light')+opt('theme','dark','Dark'))
  +box('Text size','Padhne me aasani ke liye.',opt('size','small','Chhota')+opt('size','normal','Normal')+opt('size','large','Bada'))
+ +((!isHttpHost()||prefs.siteUrl||(me&&me.role==='admin'))?`<div class="panel"><b>Website link</b><p class="mute" style="margin:4px 0 10px">WhatsApp share ke liye live https:// link.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="st_url" type="url" value="${esc(prefs.siteUrl||'')}" placeholder="https://..." style="flex:1;min-width:160px"><button class="btn sm" onclick="saveSitePref()">Save</button>${prefs.siteUrl?`<button class="btn sm ghost" onclick="prefs.siteUrl='';applyPrefs();toast('Link hata diya');settingsM()">Hatao</button>`:''}</div></div>`:'')
  +(me&&me.role==='faculty'?box('Faculty settings','Apne club ki gallery.',`<button class="btn sm" onclick="galM()">Club gallery</button><button class="btn sm" onclick="myPwM()">Mera password</button>`):'')
  +(me&&me.role==='admin'?box('Admin settings','Sirf admin ke liye.',`<button class="btn sm" onclick="clubM()">Naya club</button><button class="btn sm" onclick="logoM()">Club logos</button><button class="btn sm" onclick="act(facM)">Faculty accounts</button>`):'')
  +`<div class="panel" style="margin-bottom:0"><b>About</b><p class="mute" style="margin:4px 0 0">EventShaper v2.0 | College Club Event Management | Malwa Institute of Science and Technology</p></div><p style="margin:14px 0 0;text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
@@ -108,7 +121,7 @@ function nav(){
  const my='<button class="btn sm ghost" onclick="toggleLang()">'+(lang==='hi'?'English':'हिंदी')+'</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> ';
  $('#navr').innerHTML=my+(me?`<span class="mute">${me.role==='admin'?'Main Admin':esc((club(me.clubId)||{}).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`:`<button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`);
 }
-function go(v,id){cur=[v,id];nav();({home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0)}
+function go(v,id){if(v==='home'&&location.search)try{history.replaceState(null,'',location.pathname)}catch(e){}cur=[v,id];nav();({home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0)}
 $('#logo').onclick=()=>go('home');
 // ---------- public pages ----------
 let fl={q:'',club:'',when:'all'};
@@ -131,10 +144,32 @@ function renderEvents(){
  const l=evFiltered(),box=$('#evlist');if(!box)return;
  box.innerHTML=l.length?l.map(e=>eventCard(e,true)).join(''):'<p class="mute">Koi event nahi mila.</p>';
 }
-function shareEv(id){
- const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{};
- const t=`${e.title} (${c.name})\n${fdate(e.date)}, ${e.time}${e.end?' - '+e.end:''}\n${e.venue}\n\nRegister: ${location.href.split('#')[0]}`;
+function siteBase(){
+ const s=(prefs.siteUrl||'').trim();
+ if(/^https?:\/\/.+/i.test(s))return s;
+ if(isHttpHost())return location.origin+location.pathname;
+ return '';
+}
+function evUrl(id){
+ const b=siteBase();if(!b)return '';
+ try{const u=new URL(b);u.hash='';u.search='';if(!u.pathname.endsWith('/')&&!/\.html?$/i.test(u.pathname))u.pathname+='/';u.searchParams.set('event',id);return u.href}catch(e){return ''}
+}
+function sendWa(e,url){
+ const c=club(e.clubId)||{};
+ const t=`*${e.title}* (${c.name})\n${fdate(e.date)}, ${e.time}${e.end?' - '+e.end:''}\n${e.venue}`+(url?`\n\nRegister:\n${url}`:'');
  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank','noopener');
+}
+function shareEv(id){
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const u=evUrl(id);
+ if(u)return sendWa(e,u);
+ modal(`<h2 style="margin-top:0">Website link set karein</h2><p class="mute">Abhi aap ye file phone ya computer se offline chala rahe hain, isliye WhatsApp par link dusre phone me nahi khulegi. Isko Netlify ya GitHub Pages par upload karke uska https:// link niche daalein:</p><div class="f" style="grid-template-columns:1fr">${fld('sh_url','Website link','url',prefs.siteUrl||'','https://...')}</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM();sendWa(db.events.find(x=>x.id==${e.id}),'')">Bina link bhejo</button><button class="btn" onclick="saveShareUrl(${e.id})">Save aur share karo</button></p>`);
+}
+function saveShareUrl(id){
+ const v=($('#sh_url')?.value||'').trim().replace(/\/+$/,'');
+ if(!/^https:\/\/.+/i.test(v))return toast('Sahi link daalo (https:// se shuru)');
+ try{new URL(v)}catch(e){return toast('Sahi link daalo (https:// se shuru)')}
+ prefs.siteUrl=v;applyPrefs();closeM();shareEv(id);
 }
 function calEv(id){
  const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{};
@@ -164,7 +199,7 @@ function reportHTML(){
 }
 function eventCard(e,showClub){
  const c=club(e.clubId)||{},n=count(e.id),full=n>=e.seats,closed=e.last&&e.last<today();
- return `<div class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
+ return `<div id="ev-${e.id}" class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
  ${closed?'<span class="chip">Registration band</span>':full?'<span class="chip">Seats full</span>':`<button class="btn sm" onclick="regM(${e.id})">Register</button>`}</div>
  ${e.img?`<img class="logo" style="width:100%;height:auto;max-height:520px;object-fit:contain;margin:6px 0 10px" src="${esc(e.img)}" alt="${esc(e.title)} photo">`:''}<p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}
  <span class="chip" style="font-weight:700">${cd(e)}</span><span class="chip">${fdate(e.date)}, ${esc(e.time)}${e.end?' to '+esc(e.end):''}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span>${e.last?`<span class="chip">Last date: ${fdate(e.last)}</span>`:''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button><button class="btn sm ghost" onclick="calEv(${e.id})">Calendar me jodo</button></div></div>`;
@@ -427,7 +462,15 @@ const D=[
 ["Club save ho gaya","Club saved","क्लब सेव हो गया"],["Naya club ban gaya","New club created","नया क्लब बन गया"],["Club ka naam bharein","Enter the club name","क्लब का नाम भरें"],["Sahi link daalo (https:// se shuru)","Enter a valid link (starting with https://)","सही लिंक डालें (https:// से शुरू)"],
 ["Photo upload nahi hui","Photo upload failed","फोटो अपलोड नहीं हुई"],["Photo chun li","Photo selected","फोटो चुन ली गई"],["Photo nahi mili","No photo found","फोटो नहीं मिली"],["Logo chun liya","Logo selected","लोगो चुन लिया गया"],["File nahi mili","No file found","फ़ाइल नहीं मिली"],
 ["Pehle logo ki file chuno","Choose a logo file first","पहले लोगो की फ़ाइल चुनें"],["Logo badal gaya","Logo updated","लोगो बदल गया"],["Kuch gadbad ho gayi","Something went wrong","कुछ गड़बड़ हो गई"],
-["Is member ko club se hatana hai?","Remove this member from the club?","इस सदस्य को क्लब से हटाना है?"],["Event aur uski registrations delete ho jayengi. Pakka?","The event and its registrations will be deleted. Sure?","इवेंट और उसकी रजिस्ट्रेशन हट जाएंगी। पक्का?"]
+["Is member ko club se hatana hai?","Remove this member from the club?","इस सदस्य को क्लब से हटाना है?"],["Event aur uski registrations delete ho jayengi. Pakka?","The event and its registrations will be deleted. Sure?","इवेंट और उसकी रजिस्ट्रेशन हट जाएंगी। पक्का?"],
+["Website link set karein","Set website link","वेबसाइट लिंक सेट करें"],
+["Abhi aap ye file phone ya computer se offline chala rahe hain, isliye WhatsApp par link dusre phone me nahi khulegi. Isko Netlify ya GitHub Pages par upload karke uska https:// link niche daalein:","You are opening this file offline from your phone or computer, so a local file link will not open on other phones on WhatsApp. Upload index.html to Netlify or GitHub Pages and enter its https:// link below:","अभी आप यह फ़ाइल फ़ोन या कंप्यूटर से ऑफ़लाइन चला रहे हैं, इसलिए WhatsApp पर लिंक दूसरे फ़ोन में नहीं खुलेगी। इसे Netlify या GitHub Pages पर अपलोड करके उसका https:// लिंक नीचे डालें:"],
+["Website link","Website link","वेबसाइट लिंक"],
+["WhatsApp share ke liye live https:// link.","Live https:// link used for WhatsApp sharing.","WhatsApp शेयर के लिए लाइव https:// लिंक।"],
+["Bina link bhejo","Send without link","बिना लिंक भेजें"],
+["Save aur share karo","Save and share","सेव और शेयर करें"],
+["Link save ho gaya","Link saved","लिंक सेव हो गया"],
+["Link hata diya","Link removed","लिंक हटा दिया गया"]
 ];
 const MAP={};D.forEach(x=>MAP[x[0]]=[x[1],x[2]]);
 const PRE=[["Account nahi ban paya:","Could not create the account:","अकाउंट नहीं बन पाया:"],["Naam: ","Name: ","नाम: "],["Roll: ","Roll: ","रोल: "],["Branch: ","Branch: ","ब्रांच: "],["Email: ","Email: ","ईमेल: "],["Phone: ","Phone: ","फ़ोन: "],["Team: ","Team: ","टीम: "],["Last date: ","Last date: ","अंतिम तारीख: "]];
@@ -468,7 +511,12 @@ applyPrefs();
 (async()=>{
  try{await load()}catch(e){$('#app').innerHTML='<div class="panel"><b>Database se connect nahi ho paaya.</b><p class="mute">Internet check karo aur page refresh karo.</p></div>';return}
  try{tok=sessionStorage.getItem('es_tok');if(tok)await profile()}catch(e){tok=null;me=null}
- tx(document.body);document.documentElement.lang=lang;go('home');
+ tx(document.body);document.documentElement.lang=lang;
+ const q=new URLSearchParams(location.search),eid=q.get('event'),cid=q.get('club');
+ const ev=eid&&db.events.find(x=>x.id==eid);
+ if(ev){go('club',ev.clubId);setTimeout(()=>{const el=$('#ev-'+ev.id);if(el){el.classList.add('hl');el.scrollIntoView({behavior:'smooth',block:'center'})}},80)}
+ else if(cid&&club(cid))go('club',+cid);
+ else go('home');
 })();
 
 </script>
