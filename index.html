@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>EventShaper</title>
+<meta name="description" content="EventShaper — College Club Event Management, Malwa Institute of Science and Technology (MIST)">
+<meta name="theme-color" content="#2B2F77">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="EventShaper">
+<meta property="og:title" content="EventShaper — MIST College Club Events">
+<meta property="og:description" content="Browse all 7 college clubs, upcoming events and register online.">
+<meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=DM+Sans:wght@400;500;700&family=Noto+Sans+Devanagari:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -34,6 +41,12 @@ nav b{display:flex;align-items:center;gap:10px;font:800 22px 'Bricolage Grotesqu
 .club:hover{border-color:var(--c)}
 h2{font-size:26px;margin:30px 0 14px}
 .ev{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:14px;padding:16px;margin-bottom:12px}
+.ev.hl{outline:3px solid var(--brand);outline-offset:2px;box-shadow:0 8px 28px #0002}
+.notice{background:linear-gradient(90deg,#FFF8E1,#FFF3CD);color:#14182F;border:1.5px solid #F5B301;border-left:6px solid #E8830C;border-radius:14px;padding:13px 16px;margin:8px 0 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+:root[data-theme="dark"] .notice{background:#2A2310;color:#EEF0FA;border-color:#C89B27}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .notice{background:#2A2310;color:#EEF0FA;border-color:#C89B27}}
+.winbox{background:var(--bg);border:1.5px solid #F5B301;border-radius:12px;padding:10px 13px;margin:8px 0}
+.role-card{background:var(--card);border:1.5px solid var(--line);border-top:6px solid var(--rc);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;transition:transform .15s,box-shadow .15s}.role-card:hover{transform:translateY(-2px);border-color:var(--rc);box-shadow:0 10px 26px #0001}
 .ev h3{font-size:19px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .chip{display:inline-block;font-size:13px;padding:2px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line);margin:6px 6px 0 0}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px}
@@ -63,10 +76,11 @@ const HERO2='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMD
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const logo=(c,cls)=>{const s=c.logo||LOGOS[c.id];return s?`<img class="logo ${cls||''}" src="${s}" alt="${esc(c.name)} logo">`:''};
-let db={clubs:[],events:[],gal:[]},taken={},mem={},R=[],M=[],me=null,tok=null,tmp={},busyF=false;
+let db={clubs:[],events:[],gal:[],notice:''},taken={},mem={},R=[],M=[],myR=[],me=null,tok=null,portalMode='',tmp={},busyF=false,deferredPwa=null;
 const club=id=>db.clubs.find(c=>c.id==id);
 const count=id=>taken[id]||0,memCount=id=>mem[id]||0;
 const fdate=d=>{try{return new Date(d+'T00:00').toLocaleDateString((lang==='hi'?'hi-IN':'en-IN'),{day:'numeric',month:'short',year:'numeric'})}catch(e){return d}};
+const ftime=t=>{if(!t)return '';const m=String(t).match(/^(\d{1,2}):(\d{2})/);if(!m)return t;const h=+m[1];return ((h%12)||12)+':'+m[2]+' '+(h>=12?'PM':'AM')};
 const today=()=>new Date().toISOString().slice(0,10);
 const stTxt=s=>({accepted:'Accept ho gayi',cancelled:'Cancel ho gayi'}[s]||'Intezar (pending)');
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),Math.max(2400,t.length*55))}
@@ -83,33 +97,86 @@ async function sb(path,o={}){
  return j;
 }
 const rpc=(n,b)=>sb('/rest/v1/rpc/'+n,{m:'POST',body:b||{}});
-const mapC=c=>({id:c.id,name:c.name,tag:c.tag||'',intro:c.intro||'',color:c.color||'#2B2F77',fname:c.faculty_name||'',fphone:c.faculty_phone||'',logo:c.logo||''});
-const mapE=e=>({id:e.id,clubId:e.club_id,title:e.title,desc:e.description||'',note:e.note||'',date:e.event_date,time:(e.start_time||'').slice(0,5),end:(e.end_time||'').slice(0,5),venue:e.venue||'',last:e.last_date||'',seats:e.seats,type:e.type,team:e.team_size||1,img:e.image||'',created:e.created_at||''});
+const packIntro=(intro,nt)=>String(intro||'').trim()+(nt&&String(nt).trim()?`\n[[NOTICE:${String(nt).trim().replace(/\]\]/g,'')}]]`:'');
+const packNote=(note,w)=>{const a=(w||[]).map(x=>String(x||'').replace(/[|\]]/g,' ').trim());return String(note||'').trim()+(a.some(Boolean)?`\n[[WIN:${a[0]||''}|${a[1]||''}|${a[2]||''}]]`:'')};
+const mapC=c=>{const raw=c.intro||'',nm=raw.match(/\n?\[\[NOTICE:([\s\S]*?)\]\]$/);return {id:c.id,name:c.name,tag:c.tag||'',intro:raw.replace(/\n?\[\[NOTICE:[\s\S]*?\]\]$/,'').trim(), _nt:nm?nm[1].trim():'',color:c.color||'#2B2F77',fname:c.faculty_name||'',fphone:c.faculty_phone||'',logo:c.logo||''}};
+const mapE=e=>{const raw=e.note||'',wm=raw.match(/\n?\[\[WIN:([^\]]*)\]\]$/),w=wm?wm[1].split('|').map(x=>x.trim()):['','',''];while(w.length<3)w.push('');return {id:e.id,clubId:e.club_id,title:e.title,desc:e.description||'',note:raw.replace(/\n?\[\[WIN:[^\]]*\]\]$/,'').trim(),win:w.slice(0,3),date:e.event_date,time:(e.start_time||'').slice(0,5),end:(e.end_time||'').slice(0,5),venue:e.venue||'',last:e.last_date||'',seats:e.seats,type:e.type,team:e.team_size||1,img:e.image||'',created:e.created_at||''}};
 async function load(){
  const [c,e,g,s,m]=await Promise.all([sb('/rest/v1/clubs?select=*&order=id'),sb('/rest/v1/events?select=*&order=event_date,start_time'),sb('/rest/v1/gallery?select=*&order=id'),rpc('seat_counts'),rpc('member_counts')]);
- db.clubs=c.map(mapC);db.events=e.map(mapE);db.gal=g;taken={};s.forEach(x=>taken[x.event_id]=+x.taken);mem={};m.forEach(x=>mem[x.club_id]=+x.total);
+ db.clubs=c.map(mapC);db.notice=(db.clubs[0]&&db.clubs[0]._nt)||'';db.events=e.map(mapE);db.gal=g;taken={};s.forEach(x=>taken[x.event_id]=+x.taken);mem={};m.forEach(x=>mem[x.club_id]=+x.total);
 }
 // ---------- preferences ----------
 const PK='eventShaperPrefs';let prefs={theme:'auto',size:'normal'};
 try{prefs=Object.assign(prefs,JSON.parse(localStorage.getItem(PK))||{})}catch(e){}
 function applyPrefs(){const r=document.documentElement;if(prefs.theme==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',prefs.theme);r.style.fontSize={small:'14px',normal:'16px',large:'18px'}[prefs.size]||'16px';try{localStorage.setItem(PK,JSON.stringify(prefs))}catch(e){}}
 function setPref(k,v){prefs[k]=v;applyPrefs();settingsM()}
+const SK='es_stu';let stu={};try{stu=JSON.parse(localStorage.getItem(SK))||{}}catch(e){}
+function saveStu(o){stu=Object.assign(stu,o);try{localStorage.setItem(SK,JSON.stringify(stu))}catch(e){}}
+function clearStu(p){stu={};try{localStorage.removeItem(SK)}catch(e){}['name','roll','branch','email','phone'].forEach(k=>{const el=$('#'+p+k);if(el)el.value=''});toast('Form saaf ho gaya')}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPwa=e;nav()});
+async function installApp(){
+ if(deferredPwa){deferredPwa.prompt();try{await deferredPwa.userChoice}catch(e){}deferredPwa=null;nav();return}
+ toast("Browser menu kholkar 'Add to Home screen' ya 'Install app' chunein.");
+}
+(function initPwa(){
+ try{
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2B2F77"/><stop offset="1" stop-color="#B4235A"/></linearGradient></defs><rect width="192" height="192" rx="42" fill="url(#g)"/><rect x="42" y="56" width="108" height="92" rx="14" fill="none" stroke="#fff" stroke-width="11"/><path d="M42 86h108M72 42v28M120 42v28" stroke="#fff" stroke-width="11" stroke-linecap="round"/><circle cx="96" cy="120" r="15" fill="#F5B301"/></svg>`;
+  const ic='data:image/svg+xml;base64,'+btoa(svg);
+  const lk=document.createElement('link');lk.rel='icon';lk.href=ic;document.head.appendChild(lk);
+  const ap=document.createElement('link');ap.rel='apple-touch-icon';ap.href=ic;document.head.appendChild(ap);
+  const mf={name:'EventShaper — MIST',short_name:'EventShaper',start_url:location.href.split('#')[0].split('?')[0],display:'standalone',background_color:'#F2F4F8',theme_color:'#2B2F77',icons:[{src:ic,sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'}]};
+  const ml=document.createElement('link');ml.rel='manifest';ml.href=URL.createObjectURL(new Blob([JSON.stringify(mf)],{type:'application/manifest+json'}));document.head.appendChild(ml);
+ }catch(e){}
+})();
 function settingsM(){
  const opt=(k,v,l)=>`<button class="btn sm ${prefs[k]===v?'':'ghost'}" onclick="setPref('${k}','${v}')">${l}</button>`;
  const box=(t,d,b)=>`<div class="panel"><b>${t}</b><p class="mute" style="margin:4px 0 10px">${d}</p><div class="row" style="justify-content:flex-start">${b}</div></div>`;
  modal(`<h2 style="margin-top:0">Settings</h2>`+box('Theme','Screen ka rang chuno.',opt('theme','auto','Auto')+opt('theme','light','Light')+opt('theme','dark','Dark'))
  +box('Text size','Padhne me aasani ke liye.',opt('size','small','Chhota')+opt('size','normal','Normal')+opt('size','large','Bada'))
+ +box('Share aur App','Website ka QR code ya phone me app install karein.',`<button class="btn sm" onclick="siteQrM()">Website QR code</button><button class="btn sm ghost" onclick="installApp()">App install karo</button>`)
  +(me&&me.role==='faculty'?box('Faculty settings','Apne club ki gallery.',`<button class="btn sm" onclick="galM()">Club gallery</button><button class="btn sm" onclick="myPwM()">Mera password</button>`):'')
  +(me&&me.role==='admin'?box('Admin settings','Sirf admin ke liye.',`<button class="btn sm" onclick="clubM()">Naya club</button><button class="btn sm" onclick="logoM()">Club logos</button><button class="btn sm" onclick="act(facM)">Faculty accounts</button>`):'')
  +`<div class="panel" style="margin-bottom:0"><b>About</b><p class="mute" style="margin:4px 0 0">EventShaper v2.0 | College Club Event Management | Malwa Institute of Science and Technology</p></div><p style="margin:14px 0 0;text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
 }
-// ---------- navigation ----------
+// ---------- navigation & entry gate ----------
 function nav(){
- const my='<button class="btn sm ghost" onclick="toggleLang()">'+(lang==='hi'?'English':'हिंदी')+'</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> ';
- $('#navr').innerHTML=my+(me?`<span class="mute">${me.role==='admin'?'Main Admin':esc((club(me.clubId)||{}).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`:`<button class="btn sm" onclick="loginM()">Faculty / Admin login</button>`);
+ const langBtn='<button class="btn sm ghost" onclick="toggleLang()">'+(lang==='hi'?'English':'हिंदी')+'</button>';
+ if(!portalMode){$('#navr').innerHTML=langBtn;return}
+ const pwa=deferredPwa?'<button class="btn sm ghost" onclick="installApp()">App install karo</button> ':'';
+ const common=langBtn+' '+pwa+'<button class="btn sm ghost" onclick="siteQrM()">Website QR code</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> ';
+ if(portalMode==='student'){
+  $('#navr').innerHTML=common+'<button class="btn sm ghost" onclick="exitRole()">Role badlo</button>';
+ }else{
+  $('#navr').innerHTML=common+(me?`<span class="mute">${me.role==='admin'?'Main Admin':esc((club(me.clubId)||{}).name)+' faculty'}</span> <button class="btn sm" onclick="go('dash')">Dashboard</button> <button class="btn sm ghost" onclick="logout()">Logout</button>`:'');
+ }
 }
-function go(v,id){cur=[v,id];nav();({home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0)}
-$('#logo').onclick=()=>go('home');
+function enterSite(){
+ const q=new URLSearchParams(location.search),eid=q.get('event'),cid=q.get('club');
+ const ev=eid&&db.events.find(x=>x.id==eid);
+ if(ev){go('club',ev.clubId);setTimeout(()=>{const el=$('#ev-'+ev.id);if(el){el.classList.add('hl');el.scrollIntoView({behavior:'smooth',block:'center'})}},80)}
+ else if(cid&&club(cid))go('club',+cid);
+ else go('home');
+}
+function enterStudent(){me=null;tok=null;portalMode='student';closeM();enterSite()}
+function exitRole(){me=null;tok=null;portalMode='';R=[];M=[];try{sessionStorage.removeItem('es_tok')}catch(e){}closeM();go('gate')}
+function gate(){
+ const q=new URLSearchParams(location.search),eid=q.get('event'),ev=eid&&db.events.find(x=>x.id==eid);
+ const rCard=(col,ic,t,d,btn,fn)=>`<div class="role-card" style="--rc:${col}"><div><div style="font-size:34px;line-height:1;margin-bottom:10px">${ic}</div><h3 style="font-size:22px;margin-bottom:6px">${t}</h3><p class="mute" style="margin:0;font-size:15px">${d}</p></div><button class="btn" style="background:${col};width:100%" onclick="${fn}">${btn}</button></div>`;
+ $('#app').innerHTML=`<div class="banner" style="margin-bottom:22px"><h1 style="font-size:clamp(28px,5vw,46px)">EventShaper me aapka swagat hai</h1><p style="max-width:660px;font-size:17px">Malwa Institute of Science and Technology (MIST) — College Club Event Portal</p>${ev?`<p style="margin-top:14px"><span class="chip" style="background:#FFF8E1;color:#14182F;border-color:#F5B301;font-weight:700">📅 ${esc(ev.title)}</span></p>`:''}</div>
+ <h2 style="margin-top:0">Aage badhne ke liye chunein aap kaun hain:</h2>
+ <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:12px">
+  ${rCard('#0B7CC4','🎓','Student','Clubs dekhein, events me register karein aur certificate download karein. Login ki zarurat nahi.','Student ke roop me jayein','enterStudent()')}
+  ${rCard('#0E8F6B','👩‍🏫','Faculty','Apne club ke events jodein aur registrations accept ya cancel karein. Username aur password zaruri.','Faculty login',"gateLoginM('faculty')")}
+  ${rCard('#B4235A','🛡️','Admin','Sabhi clubs, faculty accounts, notice board aur reports sambhalein. Admin username aur password zaruri.','Admin login',"gateLoginM('admin')")}
+ </div>`;
+}
+function go(v,id){
+ if(v!=='gate'&&!portalMode)v='gate';
+ if(v==='dash'&&!me)v='home';
+ if(v==='home'&&location.search)try{history.replaceState(null,'',location.pathname)}catch(e){}
+ cur=[v,id];nav();({gate,home,club:clubPage,dash:dash})[v](id);window.scrollTo(0,0);
+}
+$('#logo').onclick=()=>go(portalMode?'home':'gate');
 // ---------- public pages ----------
 let fl={q:'',club:'',when:'all'};
 const dd=e=>Math.round((new Date(e.date+'T00:00')-new Date(new Date().toDateString()))/864e5);
@@ -137,19 +204,279 @@ const CHANNEL_URL='';  // paste your WhatsApp channel or group invite link here
 let lastReg=null;
 const isNew=e=>e.created&&Date.now()-new Date(e.created)<2592e5;
 function notifyMail(d,title){if(!MAIL_URL)return;fetch(MAIL_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({roll:d.p_roll,phone:d.p_phone,title,lang})}).catch(()=>{})}
+// Compact ISO/IEC 18004 QR Code Matrix Generator (Byte mode, ECC Level M, Versions 1..10)
+function qrMatrix(str){
+ const bytes=Array.from(new TextEncoder().encode(str));
+ // [totalCodewords, ecCodewordsPerBlock, numBlocksGroup1, dataCwGroup1, numBlocksGroup2, dataCwGroup2] for ECC-M V1..V10
+ const V=[
+  null,
+  [26,10,1,16,0,0],[44,16,1,28,0,0],[70,26,1,44,0,0],[100,18,2,32,0,0],[134,24,2,43,0,0],
+  [172,16,4,27,0,0],[196,18,4,31,0,0],[242,22,2,38,2,39],[292,22,3,36,2,37],[346,26,4,43,1,44]
+ ];
+ const AL=[null,[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+ let ver=1;
+ for(;ver<=10;ver++){
+  const cap=V[ver][2]*V[ver][3]+V[ver][4]*V[ver][5];
+  const hdr=(ver<10?12:20); // 4 mode + 8/16 len
+  if(bytes.length*8+hdr<=cap*8)break;
+ }
+ if(ver>10)throw new Error('Text too long for QR');
+ const [tot,ecLen,b1,d1,b2,d2]=V[ver],dataCap=b1*d1+b2*d2;
+ const bits=[];
+ const push=(v,n)=>{for(let i=n-1;i>=0;i--)bits.push((v>>i)&1)};
+ push(4,4);push(bytes.length,ver<10?8:16);
+ bytes.forEach(b=>push(b,8));
+ for(let i=0;i<4&&bits.length<dataCap*8;i++)bits.push(0);
+ while(bits.length%8)bits.push(0);
+ const data=[];
+ for(let i=0;i<bits.length;i+=8){let b=0;for(let j=0;j<8;j++)b=(b<<1)|bits[i+j];data.push(b)}
+ for(let p=0;data.length<dataCap;p++)data.push(p%2?17:236);
+
+ // GF(256) with primitive 0x11d
+ const EXP=new Uint8Array(512),LOG=new Uint8Array(256);
+ for(let x=1,i=0;i<255;i++){EXP[i]=x;LOG[x]=i;x<<=1;if(x&256)x^=0x11d}
+ for(let i=255;i<512;i++)EXP[i]=EXP[i-255];
+ const gfMul=(a,b)=>a&&b?EXP[LOG[a]+LOG[b]]:0;
+ let gen=[1];
+ for(let i=0;i<ecLen;i++){
+  const ng=new Array(gen.length+1).fill(0);
+  for(let j=0;j<gen.length;j++){ng[j]^=gen[j];ng[j+1]^=gfMul(gen[j],EXP[i])}
+  gen=ng;
+ }
+ const rsEncode=blk=>{
+  const rem=new Array(ecLen).fill(0);
+  for(const b of blk){
+   const f=b^rem.shift();rem.push(0);
+   for(let j=0;j<ecLen;j++)rem[j]^=gfMul(gen[j+1],f);
+  }
+  return rem;
+ };
+ const dBlocks=[],eBlocks=[];let off=0;
+ for(let i=0;i<b1;i++){const b=data.slice(off,off+d1);off+=d1;dBlocks.push(b);eBlocks.push(rsEncode(b))}
+ for(let i=0;i<b2;i++){const b=data.slice(off,off+d2);off+=d2;dBlocks.push(b);eBlocks.push(rsEncode(b))}
+ const code=[];
+ const maxD=Math.max(d1,d2);
+ for(let i=0;i<maxD;i++)for(const b of dBlocks)if(i<b.length)code.push(b[i]);
+ for(let i=0;i<ecLen;i++)for(const b of eBlocks)code.push(b[i]);
+
+ const N=ver*4+17;
+ const makeGrid=()=>{
+  const M=Array.from({length:N},()=>new Int8Array(N)),F=Array.from({length:N},()=>new Uint8Array(N));
+  const set=(r,c,v)=>{if(r>=0&&r<N&&c>=0&&c<N){M[r][c]=v?1:0;F[r][c]=1}};
+  const finder=(R,C)=>{
+   for(let r=-1;r<=7;r++)for(let c=-1;c<=7;c++)
+    set(R+r,C+c,r>=0&&r<=6&&c>=0&&c<=6&&(r===0||r===6||c===0||c===6||(r>=2&&r<=4&&c>=2&&c<=4)));
+  };
+  finder(0,0);finder(0,N-7);finder(N-7,0);
+  for(let i=8;i<N-8;i++){set(6,i,i%2===0);set(i,6,i%2===0)}
+  const ap=AL[ver];
+  for(const r of ap)for(const c of ap){
+   if((r===6&&c===6)||(r===6&&c===N-7)||(r===N-7&&c===6))continue;
+   for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++)
+    set(r+dr,c+dc,Math.max(Math.abs(dr),Math.abs(dc))!==1);
+  }
+  set(N-8,8,1);
+  for(let i=0;i<9;i++){if(!F[8][i])F[8][i]=1;if(!F[i][8])F[i][8]=1}
+  for(let i=0;i<8;i++){F[8][N-1-i]=1;F[N-1-i][8]=1}
+  if(ver>=7){
+   let v=ver<<12;for(let i=5;i>=0;i--)if((v>>(i+12))&1)v^=0x1f25<<i;
+   const vi=(ver<<12)|v;
+   for(let i=0;i<18;i++){const bit=(vi>>i)&1,a=Math.floor(i/3),b=i%3+N-11;set(a,b,bit);set(b,a,bit)}
+  }
+  let bi=0,up=true;
+  for(let c=N-1;c>0;c-=2){
+   if(c===6)c--;
+   for(let k=0;k<N;k++){
+    const r=up?N-1-k:k;
+    for(let dc=0;dc<2;dc++){
+     const cc=c-dc;
+     if(!F[r][cc]){
+      let bit=0;
+      if(bi<code.length*8)bit=(code[bi>>3]>>(7-(bi&7)))&1;
+      bi++;M[r][cc]=bit;
+     }
+    }
+   }
+   up=!up;
+  }
+  return {M,F};
+ };
+ const masks=[
+  (r,c)=>(r+c)%2===0,(r)=>(r%2)===0,(r,c)=>c%3===0,(r,c)=>(r+c)%3===0,
+  (r,c)=>(Math.floor(r/2)+Math.floor(c/3))%2===0,(r,c)=>((r*c)%2+(r*c)%3)===0,
+  (r,c)=>(((r*c)%2+(r*c)%3)%2)===0,(r,c)=>(((r+c)%2+(r*c)%3)%2)===0
+ ];
+ const putFmt=(M,mask)=>{
+  const data=(0<<3)|mask; // ECC M = 00 in QR format! Wait: ECC L=01, M=00, Q=11, H=10!
+  let v=data<<10;for(let i=4;i>=0;i--)if((v>>(i+10))&1)v^=0x537<<i;
+  const f=((data<<10)|v)^0x5412;
+  const p1=[[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
+  const p2=[[N-1,8],[N-2,8],[N-3,8],[N-4,8],[N-5,8],[N-6,8],[N-7,8],[8,N-8],[8,N-7],[8,N-6],[8,N-5],[8,N-4],[8,N-3],[8,N-2],[8,N-1]];
+  for(let i=0;i<15;i++){const bit=(f>>(14-i))&1;M[p1[i][0]][p1[i][1]]=bit;M[p2[i][0]][p2[i][1]]=bit}
+ };
+ const score=M=>{
+  let s=0;
+  for(let r=0;r<N;r++){
+   let run1=1,run2=1;
+   for(let c=1;c<N;c++){
+    run1=M[r][c]===M[r][c-1]?run1+1:(run1>=5&&(s+=run1-2),1);
+    run2=M[c][r]===M[c-1][r]?run2+1:(run2>=5&&(s+=run2-2),1);
+   }
+   if(run1>=5)s+=run1-2;if(run2>=5)s+=run2-2;
+  }
+  for(let r=0;r<N-1;r++)for(let c=0;c<N-1;c++){
+   const v=M[r][c];if(v===M[r][c+1]&&v===M[r+1][c]&&v===M[r+1][c+1])s+=3;
+  }
+  return s;
+ };
+ let best=null,bestS=1e9;
+ for(let m=0;m<8;m++){
+  const {M,F}=makeGrid();
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(!F[r][c]&&masks[m](r,c))M[r][c]^=1;
+  putFmt(M,m);
+  const sc=score(M);if(sc<bestS){bestS=sc;best=M.map(row=>Array.from(row))}
+ }
+ return best;
+}
+const SITE_URL=()=>/^https?:$/.test(location.protocol)&&/github\.io$/.test(location.hostname)?location.href.split('#')[0].split('?')[0]:SITE;
+function evUrl(id){
+ try{const u=new URL(SITE_URL());u.hash='';u.search='';if(!u.pathname.endsWith('/')&&!/\.html?$/i.test(u.pathname))u.pathname+='/';u.searchParams.set('event',id);return u.href}catch(e){return SITE_URL()+'?event='+id}
+}
+function drawQrCanvas(cv,text,size,fg){
+ const m=qrMatrix(text),n=m.length,q=4,tot=n+q*2,sc=Math.max(4,Math.floor(size/tot)),W=tot*sc;
+ cv.width=cv.height=W;const x=cv.getContext('2d');
+ x.fillStyle='#fff';x.fillRect(0,0,W,W);x.fillStyle=fg||'#14182F';
+ for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(m[r][c])x.fillRect((c+q)*sc,(r+q)*sc,sc,sc);
+}
+function wrapLines(ctx,txt,maxW){
+ const words=String(txt||'').split(/\s+/),out=[];let cur='';
+ for(const w of words){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){out.push(cur);cur=w}else cur=t}
+ if(cur)out.push(cur);return out;
+}
+function copyTxt(t){
+ if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast('Link copy ho gaya')).catch(()=>prompt('Copy link:',t));
+ else prompt('Copy link:',t);
+}
+function siteQrM(){
+ const u=SITE_URL();
+ modal(`<h2 style="margin-top:0">Website QR code</h2><p class="mute">Scan karke EventShaper website kholein.</p><div style="text-align:center;background:#fff;padding:14px;border-radius:14px;border:1px solid var(--line)"><canvas id="qrc" style="max-width:240px;width:100%;height:auto;display:block;margin:0 auto"></canvas><small style="color:#5A6078;word-break:break-all;display:block;margin-top:8px">${esc(u)}</small></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="copyTxt('${esc(u)}')">Link copy karo</button><button class="btn sm" onclick="dlQr(0)">QR download karo</button><button class="btn ghost sm" onclick="closeM()">Done</button></p>`);
+ setTimeout(()=>{const c=$('#qrc');if(c)drawQrCanvas(c,u,280,'#14182F')},20);
+}
+function evQrM(id){
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const c=club(e.clubId)||{},u=evUrl(e.id),tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+ modal(`<h2 style="margin-top:0">${esc(e.title)}</h2><p class="mute" style="margin:4px 0 10px">${esc(c.name)} · ${fdate(e.date)}${tm?', '+esc(tm):''} · ${esc(e.venue)}</p><p class="mute" style="margin:0 0 10px">Scan karke seedha is event par jayein.</p><div style="text-align:center;background:#fff;padding:14px;border-radius:14px;border:2px solid ${c.color||'#2B2F77'}"><canvas id="qrc" style="max-width:240px;width:100%;height:auto;display:block;margin:0 auto"></canvas><small style="color:#5A6078;word-break:break-all;display:block;margin-top:8px">${esc(u)}</small></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="copyTxt('${esc(u)}')">Link copy karo</button><button class="btn sm" onclick="dlQr(${e.id})">QR download karo</button><button class="btn ghost sm" onclick="closeM()">Done</button></p>`);
+ setTimeout(()=>{const cv=$('#qrc');if(cv)drawQrCanvas(cv,u,280,'#14182F')},20);
+}
+function dlQr(evId){
+ const e=evId?db.events.find(x=>x.id==evId):null,c=e?(club(e.clubId)||{}):null;
+ const u=e?evUrl(e.id):SITE_URL(),col=(c&&c.color)||'#2B2F77';
+ const W=900,H=e?1220:1100,cv=document.createElement('canvas');cv.width=W;cv.height=H;
+ const x=cv.getContext('2d');
+ x.fillStyle='#F4F6FB';x.fillRect(0,0,W,H);
+ const g=x.createLinearGradient(0,0,W,220);g.addColorStop(0,col);g.addColorStop(1,'#B4235A');
+ x.fillStyle=g;x.fillRect(0,0,W,220);
+ x.fillStyle='#fff';x.textAlign='center';
+ x.font='800 44px system-ui,sans-serif';x.fillText('EventShaper — MIST',W/2,95);
+ x.font='500 24px system-ui,sans-serif';x.fillText('Malwa Institute of Science and Technology',W/2,140);
+ x.font='700 22px system-ui,sans-serif';x.fillStyle='#FFE082';x.fillText(e?(c.name||'College Club Event'):'Official College Club Event Portal',W/2,185);
+ let y=275;
+ if(e){
+  x.fillStyle='#14182F';x.font='800 38px system-ui,sans-serif';
+  for(const ln of wrapLines(x,e.title,780).slice(0,2)){x.fillText(ln,W/2,y);y+=46}
+  const tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+  x.fillStyle='#5A6078';x.font='600 24px system-ui,sans-serif';
+  x.fillText(`${fdate(e.date)}${tm?'  |  '+tm:''}  |  ${e.venue}`,W/2,y+8);y+=55;
+ }else{
+  x.fillStyle='#14182F';x.font='800 34px system-ui,sans-serif';
+  x.fillText('Scan QR to Browse All 7 Clubs & Events',W/2,y+15);y+=65;
+ }
+ const qCv=document.createElement('canvas');drawQrCanvas(qCv,u,520,'#14182F');
+ const qS=520,qX=(W-qS)/2;
+ x.fillStyle='#fff';x.strokeStyle=col;x.lineWidth=6;
+ if(x.roundRect){x.beginPath();x.roundRect(qX-24,y,qS+48,qS+48,24);x.fill();x.stroke()}else{x.fillRect(qX-24,y,qS+48,qS+48);x.strokeRect(qX-24,y,qS+48,qS+48)}
+ x.drawImage(qCv,qX,y+24,qS,qS);
+ y+=qS+95;
+ x.fillStyle=col;x.font='700 26px system-ui,sans-serif';
+ x.fillText(e?'Scan QR with Phone Camera to Open Event & Register':'Scan QR with Phone Camera to Open EventShaper',W/2,y);
+ x.fillStyle='#5A6078';x.font='500 19px system-ui,sans-serif';
+ x.fillText(u,W/2,y+38);
+ x.fillStyle='#8A90A8';x.font='500 18px system-ui,sans-serif';
+ x.fillText('Principal: Dr. Ram Prasad Dangi, MIST',W/2,H-28);
+ const a=document.createElement('a');a.href=cv.toDataURL('image/png');
+ a.download=(e?e.title.replace(/[^a-z0-9]+/gi,'-'):'EventShaper-Website')+'-QR.png';a.click();
+}
 function waConfirm(){
  const r=lastReg;if(!r)return;
- const t=lang==='hi'?`EventShaper: आपका रजिस्ट्रेशन मिल गया।\nइवेंट: ${r.title}\nतारीख: ${fdate(r.date)}, ${r.time}\nजगह: ${r.venue}\nरोल: ${r.roll}\nस्टेटस: प्रतीक्षा में (फैकल्टी के अप्रूव करने पर बदलेगा)`:`EventShaper: your registration is received.\nEvent: ${r.title}\nDate: ${fdate(r.date)}, ${r.time}\nVenue: ${r.venue}\nRoll: ${r.roll}\nStatus: Pending (changes when the faculty approves)`;
+ const tm=ftime(r.time)+(r.end?' - '+ftime(r.end):''),u=r.id?evUrl(r.id):SITE_URL();
+ const t=lang==='hi'?`EventShaper: आपका रजिस्ट्रेशन मिल गया।\nइवेंट: ${r.title}\nतारीख: ${fdate(r.date)}, ${tm}\nजगह: ${r.venue}\nरोल: ${r.roll}\nस्टेटस: प्रतीक्षा में (फैकल्टी के अप्रूव करने पर बदलेगा)\nलिंक: ${u}`:`EventShaper: your registration is received.\nEvent: ${r.title}\nDate: ${fdate(r.date)}, ${tm}\nVenue: ${r.venue}\nRoll: ${r.roll}\nStatus: Pending (changes when the faculty approves)\nLink: ${u}`;
  window.open('https://wa.me/91'+r.phone.replace(/\D/g,'').slice(-10)+'?text='+encodeURIComponent(t),'_blank','noopener');
 }
 function shareM(id){
- modal(`<h2 style="margin-top:0">Event ban gaya!</h2><p class="mute">Students ko batane ke liye is event ko apne WhatsApp group me share karo.</p><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Done</button><button class="btn" onclick="shareEv(${id})">WhatsApp par share karo</button></p>`);
+ modal(`<h2 style="margin-top:0">Event ban gaya!</h2><p class="mute">Students ko batane ke liye is event ko apne WhatsApp group me share karo ya QR download karo.</p><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Done</button><button class="btn ghost" onclick="evQrM(${id})">Event QR</button><button class="btn" onclick="shareEv(${id})">WhatsApp par share karo</button></p>`);
 }
-const SITE_URL=()=>/^https?:$/.test(location.protocol)&&/github\.io$/.test(location.hostname)?location.href.split('#')[0].split('?')[0]:SITE;
 function shareEv(id){
- const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{};
- const t=`${e.title} (${c.name})\n${fdate(e.date)}, ${e.time}${e.end?' - '+e.end:''}\n${e.venue}\n\nRegister: ${SITE_URL()}`;
+ const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{},tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+ const t=`*${e.title}* (${c.name})\n${fdate(e.date)}, ${tm}\n${e.venue}\n\nRegister:\n${evUrl(e.id)}`;
  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank','noopener');
+}
+function winRank(e,r){
+ if(!e||!e.win)return 0;
+ const rl=String(r.roll||'').trim().toLowerCase(),nm=String(r.name||'').trim().toLowerCase();
+ for(let i=0;i<3;i++){
+  const w=String(e.win[i]||'').trim().toLowerCase();if(!w)continue;
+  if((rl&&w.includes(rl))||(nm&&w===nm)||(nm&&rl&&w.includes(nm)))return i+1;
+ }
+ return 0;
+}
+async function certDl(r){
+ const e=db.events.find(x=>(r.event_id&&x.id==r.event_id)||(x.title===r.event_title&&x.date===r.event_date))||{title:r.event_title,date:r.event_date,venue:'MIST Campus',win:['','','']};
+ const c=club(e.clubId)||db.clubs.find(x=>x.name===r.club_name)||{name:r.club_name||'MIST Club',color:'#2B2F77',fname:'Faculty Coordinator'};
+ const rk=winRank(e,r),col=c.color||'#2B2F77',pos=['','1st Position (First)','2nd Position (Second)','3rd Position (Third)'][rk];
+ const W=1600,H=1130,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');
+ x.fillStyle='#FFFCF5';x.fillRect(0,0,W,H);
+ x.strokeStyle=col;x.lineWidth=18;x.strokeRect(34,34,W-68,H-68);
+ x.strokeStyle='#C89B27';x.lineWidth=4;x.strokeRect(58,58,W-116,H-116);
+ x.fillStyle=col;[[58,58],[W-98,58],[58,H-98],[W-98,H-98]].forEach(([px,py])=>x.fillRect(px,py,40,40));
+ const lgSrc=LOGOS[c.id]||c.logo||'';
+ if(lgSrc){
+  await new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>{const h=105,w=Math.min(200,im.width*(h/im.height));x.drawImage(im,(W-w)/2,92,w,h);res()};im.onerror=()=>res();im.src=lgSrc});
+ }
+ x.textAlign='center';
+ x.fillStyle='#14182F';x.font='800 40px Georgia,serif';
+ x.fillText('MALWA INSTITUTE OF SCIENCE AND TECHNOLOGY',W/2,248);
+ x.fillStyle='#5A6078';x.font='700 22px system-ui,sans-serif';
+ x.fillText('INDORE (M.P.)  ·  OFFICE OF STUDENT CLUBS (EVENTSHAPER)',W/2,286);
+ x.fillStyle=rk?'#B45309':col;x.font='800 54px Georgia,serif';
+ x.fillText(rk?'CERTIFICATE OF EXCELLENCE':'CERTIFICATE OF PARTICIPATION',W/2,372);
+ x.strokeStyle='#C89B27';x.lineWidth=3;x.beginPath();x.moveTo(W/2-260,394);x.lineTo(W/2+260,394);x.stroke();
+ x.fillStyle='#444B66';x.font='italic 28px Georgia,serif';
+ x.fillText('This is to proudly certify that',W/2,452);
+ x.fillStyle='#14182F';x.font='800 58px Georgia,serif';
+ x.fillText(String(r.name||'Student').toUpperCase(),W/2,530);
+ x.fillStyle='#5A6078';x.font='600 25px system-ui,sans-serif';
+ x.fillText(`Roll No: ${r.roll||'-'}${r.branch?'   |   Branch: '+r.branch:''}${r.institute?'   |   Institute: '+r.institute:''}`,W/2,578);
+ x.fillStyle='#444B66';x.font='400 28px Georgia,serif';
+ x.fillText(rk?`has secured ${pos} and demonstrated outstanding performance in`:'has actively participated in the college club event',W/2,642);
+ x.fillStyle=col;x.font='800 44px system-ui,sans-serif';
+ let ey=705;for(const ln of wrapLines(x,e.title||r.event_title,1260).slice(0,2)){x.fillText(ln,W/2,ey);ey+=50}
+ x.fillStyle='#14182F';x.font='600 27px system-ui,sans-serif';
+ x.fillText(`Organized by ${c.name}   ·   Date: ${fdate(e.date||r.event_date)}${e.venue?'   ·   Venue: '+e.venue:''}`,W/2,ey+18);
+ const sy=955;
+ x.strokeStyle='#8A90A8';x.lineWidth=2;
+ x.beginPath();x.moveTo(170,sy);x.lineTo(560,sy);x.moveTo(W-560,sy);x.lineTo(W-170,sy);x.stroke();
+ x.fillStyle='#14182F';x.font='700 25px system-ui,sans-serif';
+ x.fillText(c.fname||'Faculty Coordinator',365,sy+36);
+ x.fillText('Dr. Ram Prasad Dangi',W-365,sy+36);
+ x.fillStyle='#5A6078';x.font='500 20px system-ui,sans-serif';
+ x.fillText(`Faculty Coordinator, ${c.name}`,365,sy+66);
+ x.fillText('Principal, MIST Indore',W-365,sy+66);
+ x.beginPath();x.arc(W/2,sy+10,62,0,Math.PI*2);x.fillStyle='#FFF8E1';x.fill();x.lineWidth=4;x.strokeStyle='#C89B27';x.stroke();
+ x.fillStyle='#92400E';x.font='800 18px system-ui,sans-serif';x.fillText('MIST',W/2,sy+4);x.font='700 15px system-ui,sans-serif';x.fillText('VERIFIED',W/2,sy+26);
+ const cid=`ES-MIST-${(e.date||today()).slice(0,4)}-${e.id||0}-${String(r.roll||'').replace(/[^a-z0-9]/gi,'').slice(-6).toUpperCase()}`;
+ x.fillStyle='#8A90A8';x.font='500 17px monospace';x.fillText(`Certificate ID: ${cid}`,W/2,H-78);
+ const a=document.createElement('a');a.href=cv.toDataURL('image/png');
+ a.download=`Certificate-${String(r.roll||'MIST')}-${String(e.title||r.event_title||'Event').replace(/[^a-z0-9]+/gi,'-')}.png`;a.click();
 }
 function calEv(id){
  const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{};
@@ -177,18 +504,24 @@ function reportHTML(){
  <div class="panel"><b>Club ke hisaab se members</b>${bars(mm,()=>mx2)}</div>
  <div class="panel"><b>Events ki seats</b>${bars(fill,x=>x.cap)}</div>`;
 }
+function winHTML(e){
+ if(!e.win||!e.win.some(Boolean))return '';
+ const md=['🥇 1st','🥈 2nd','🥉 3rd'];
+ return `<div class="winbox"><b>🏆 Winners:</b> `+e.win.map((w,i)=>w?`<span class="chip" style="border-color:#F5B301;font-weight:700">${md[i]}: ${esc(w)}</span>`:'').join('')+`</div>`;
+}
 function eventCard(e,showClub){
  const c=club(e.clubId)||{},n=count(e.id),full=n>=e.seats,closed=e.last&&e.last<today();
- return `<div class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
+ return `<div id="ev-${e.id}" class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
  ${closed?'<span class="chip">Registration band</span>':full?'<span class="chip">Seats full</span>':`<button class="btn sm" onclick="regM(${e.id})">Register</button>`}</div>
- ${e.img?`<img class="logo" style="width:100%;height:auto;max-height:520px;object-fit:contain;margin:6px 0 10px" src="${esc(e.img)}" alt="${esc(e.title)} photo">`:''}<p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}
- ${isNew(e)?'<span class="chip" style="background:#F5B301;color:#14182F;font-weight:700">Naya</span>':''}<span class="chip" style="font-weight:700">${cd(e)}</span><span class="chip">${fdate(e.date)}, ${esc(e.time)}${e.end?' to '+esc(e.end):''}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span>${e.last?`<span class="chip">Last date: ${fdate(e.last)}</span>`:''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button><button class="btn sm ghost" onclick="calEv(${e.id})">Calendar me jodo</button></div></div>`;
+ ${e.img?`<img class="logo" style="width:100%;height:auto;max-height:520px;object-fit:contain;margin:6px 0 10px" src="${esc(e.img)}" alt="${esc(e.title)} photo">`:''}<p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}${winHTML(e)}
+ ${isNew(e)?'<span class="chip" style="background:#F5B301;color:#14182F;font-weight:700">Naya</span>':''}<span class="chip" style="font-weight:700">${cd(e)}</span><span class="chip">${fdate(e.date)}, ${esc(ftime(e.time))}${e.end?' to '+esc(ftime(e.end)):''}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span>${e.last?`<span class="chip">Last date: ${fdate(e.last)}</span>`:''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button><button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button><button class="btn sm ghost" onclick="calEv(${e.id})">Calendar me jodo</button></div></div>`;
 }
 const card3=(col,t,x)=>`<div class="panel" style="border-top:6px solid ${col};margin:0"><b>${t}</b><p class="mute" style="margin:6px 0 0">${x}</p></div>`;
 function home(){
- $('#app').innerHTML=`<img class="hero" src="${HERO2}" alt="EventShaper: College Event Management">
- <div class="panel"><h2 style="margin:0 0 8px">What is EventShaper?</h2><p style="margin:0">EventShaper brings the events of all 7 college clubs into one place. Students pick a club, browse its events and register online. Faculty coordinators manage their own club's events and accept or cancel registrations. The admin oversees clubs and faculty.</p></div>
- <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:8px">${card3('#0B7CC4','Student','Browse events, fill the registration form and check your status under Meri registrations.')}${card3('#0E8F6B','Faculty','Add or edit your club\'s events, and accept or cancel registrations.')}${card3('#B4235A','Admin','Add clubs and events, and update faculty details.')}</div>
+ const isStu=portalMode==='student';
+ $('#app').innerHTML=`${db.notice?`<div class="notice"><b>📢 Zaruri suchna:</b> <span style="flex:1">${esc(db.notice)}</span></div>`:''}<img class="hero" src="${HERO2}" alt="EventShaper: College Event Management">
+ <div class="panel"><div class="row"><h2 style="margin:0 0 8px">What is EventShaper?</h2><button class="btn sm ghost" onclick="siteQrM()">Website QR code</button></div><p style="margin:0">${isStu?'EventShaper par college ke sabhi 7 clubs aur unke aane wale events ek jagah dekhein, online register karein aur Meri registrations me apna status aur certificate paayein.':'EventShaper brings the events of all 7 college clubs into one place. Students pick a club, browse its events and register online. Faculty coordinators manage their own club\'s events and accept or cancel registrations. The admin oversees clubs and faculty.'}</p></div>
+ ${isStu?'':`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:8px">${card3('#0B7CC4','Student','Browse events, fill the registration form and check your status under Meri registrations.')}${card3('#0E8F6B','Faculty','Add or edit your club\'s events, and accept or cancel registrations.')}${card3('#B4235A','Admin','Add clubs and events, and update faculty details.')}</div>`}
  ${CHANNEL_URL?`<div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><p class="mute" style="margin:0;flex:1;min-width:200px">Naye events ki update seedha WhatsApp par paao.</p><a class="btn" href="${esc(CHANNEL_URL)}" target="_blank" rel="noopener" style="text-decoration:none">WhatsApp channel join karo</a></div>`:''}<h2>Hamare clubs</h2><div class="grid">${db.clubs.map(c=>`<div class="club" style="--c:${c.color}" onclick="go('club',${c.id})" tabindex="0" onkeydown="if(event.key==='Enter')go('club',${c.id})">${logo(c)}<h3>${esc(c.name)}</h3><small>${esc(c.tag)}</small><p>${esc(c.intro)}</p><p style="font-size:14px;margin:0 0 8px"><b>${esc(c.fname)}</b><br>${esc(c.fphone)}</p><small>${db.events.filter(e=>e.clubId==c.id).length} events | ${memCount(c.id)} members</small></div>`).join('')}</div>
  <h2>Aane wale events</h2><div class="f" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:14px"><input id="f_q" type="search" placeholder="Event dhundho..." value="${esc(fl.q)}" oninput="fl.q=this.value;renderEvents()"><select id="f_club" onchange="fl.club=this.value;renderEvents()"><option value="">Saare clubs</option>${db.clubs.map(c=>`<option value="${c.id}"${fl.club==c.id?' selected':''}>${esc(c.name)}</option>`).join('')}</select><select id="f_when" onchange="fl.when=this.value;renderEvents()">${[['all','Kabhi bhi'],['today','Aaj'],['week','Is hafte'],['upcoming','Aane wale'],['past','Ho chuke']].map(([v,l])=>`<option value="${v}"${fl.when===v?' selected':''}>${l}</option>`).join('')}</select></div><div id="evlist"></div>`;renderEvents();
 }
@@ -201,30 +534,37 @@ function clubPage(id){
  <h2>${esc(c.name)} ke events</h2>${ev.length?ev.map(e=>eventCard(e)).join(''):'<p class="mute">Is club ka abhi koi event nahi hai.</p>'}${gal(c)}`;
 }
 const fld=(id,l,t,v,ph)=>`<div><label>${l}</label><input id="${id}" type="${t||'text'}" value="${esc(v||'')}"${ph?` placeholder="${ph}"`:''}></div>`;
-const personF=p=>fld(p+'name','Naam')+fld(p+'roll','Roll number')+fld(p+'branch','Branch aur year','text','','CSE, 2nd year')+`<div><label>Institute</label><select id="${p}inst"><option value="MIST">MIST</option><option value="MIPS">MIPS</option></select></div><div><label>Gender</label><select id="${p}gender"><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option></select></div>`+fld(p+'email','Email','email')+fld(p+'phone','Phone','tel');
+const personF=p=>fld(p+'name','Naam','text',stu.name)+fld(p+'roll','Roll number','text',stu.roll)+fld(p+'branch','Branch aur year','text',stu.branch,'CSE, 2nd year')+`<div><label>Institute</label><select id="${p}inst"><option value="MIST"${stu.inst==='MIST'?' selected':''}>MIST</option><option value="MIPS"${stu.inst==='MIPS'?' selected':''}>MIPS</option></select></div><div><label>Gender</label><select id="${p}gender"><option value="Male"${stu.gender==='Male'?' selected':''}>Male</option><option value="Female"${stu.gender==='Female'?' selected':''}>Female</option><option value="Other"${stu.gender==='Other'?' selected':''}>Other</option></select></div>`+fld(p+'email','Email','email',stu.email)+fld(p+'phone','Phone','tel',stu.phone);
 function regM(id){
  const e=db.events.find(x=>x.id==id);
  const team=e.type==='Team'?`<div><label>Team members ke naam (${e.team-1} aur)</label><textarea id="r_team" rows="2" placeholder="Har naam alag line me"></textarea></div>`:'';
- modal(`<h2 style="margin-top:0">${esc(e.title)}</h2><div class="f" style="grid-template-columns:1fr">${personF('r_')}${team}</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(()=>doReg(${id}))">Register karo</button></p>`);
+ modal(`<div class="row"><h2 style="margin:0">${esc(e.title)}</h2>${stu.roll?`<button class="btn sm ghost" onclick="clearStu('r_')">Form saaf karo</button>`:''}</div><div class="f" style="grid-template-columns:1fr;margin-top:10px">${personF('r_')}${team}</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(()=>doReg(${id}))">Register karo</button></p>`);
 }
-const regCard=r=>`<div class="panel"><b>${esc(r.event_title)}</b><br><small class="mute">${esc(r.club_name)} | ${fdate(r.event_date)}</small><p style="margin:8px 0">Status: <b>${esc(stTxt(r.status))}</b></p><div class="mute" style="font-size:14px">Naam: ${esc(r.name)}<br>Roll: ${esc(r.roll)}<br>Branch: ${esc(r.branch)} | ${esc(r.institute)} | ${esc(r.gender)}<br>Email: ${esc(r.email)}<br>Phone: ${esc(r.phone)}${r.team?'<br>Team: '+esc(r.team):''}</div></div>`;
+function regCard(r,idx){
+ const ev=db.events.find(x=>(r.event_id&&x.id==r.event_id)||(x.title===r.event_title&&x.date===r.event_date));
+ const canCert=idx!==undefined&&r.status==='accepted'&&(!r.event_date||r.event_date<=today()||(ev&&ev.win&&ev.win.some(Boolean)));
+ const waitCert=idx!==undefined&&r.status==='accepted'&&!canCert;
+ return `<div class="panel"><b>${esc(r.event_title)}</b><br><small class="mute">${esc(r.club_name)} | ${fdate(r.event_date)}</small><p style="margin:8px 0">Status: <b>${esc(stTxt(r.status))}</b></p><div class="mute" style="font-size:14px">Naam: ${esc(r.name)}<br>Roll: ${esc(r.roll)}<br>Branch: ${esc(r.branch)} | ${esc(r.institute)} | ${esc(r.gender)}<br>Email: ${esc(r.email)}<br>Phone: ${esc(r.phone)}${r.team?'<br>Team: '+esc(r.team):''}</div>${canCert?`<p style="margin:10px 0 0"><button class="btn sm" onclick="act(()=>certDl(myR[${idx}]))">Certificate download karo</button></p>`:waitCert?`<p class="mute" style="margin:8px 0 0;font-size:13px">Certificate event wale din se download hoga.</p>`:''}</div>`;
+}
 async function doReg(id){
  const v=k=>($('#r_'+k)?.value||'').trim();
  const d={p_event:id,p_name:v('name'),p_roll:v('roll'),p_branch:v('branch'),p_institute:v('inst'),p_gender:v('gender'),p_email:v('email'),p_phone:v('phone'),p_team:v('team').replace(/\n/g,', ')};
  if(!d.p_name||!d.p_roll||!d.p_email||!d.p_phone)return toast('Naam, roll, email aur phone zaruri hain');
+ saveStu({name:d.p_name,roll:d.p_roll,branch:d.p_branch,inst:d.p_institute,gender:d.p_gender,email:d.p_email,phone:d.p_phone});
  const r=await rpc('register_for_event',d);
  if(r!=='ok')return toast(r);
  await load();const e=db.events.find(x=>x.id==id);
- lastReg={title:e.title,date:e.date,time:e.time,venue:e.venue,roll:d.p_roll,phone:d.p_phone};notifyMail(d,e.title);
+ lastReg={id:e.id,title:e.title,date:e.date,time:e.time,end:e.end,venue:e.venue,roll:d.p_roll,phone:d.p_phone};notifyMail(d,e.title);
  modal(`<h2 style="margin-top:0">Registration bhej di gayi</h2><p class="mute">Faculty ya admin ke accept karne par status badlega. Status "Meri registrations" me dekh sakte ho.</p>${regCard({event_title:e.title,club_name:(club(e.clubId)||{}).name,event_date:e.date,status:'pending',name:d.p_name,roll:d.p_roll,branch:d.p_branch,institute:d.p_institute,gender:d.p_gender,email:d.p_email,phone:d.p_phone,team:d.p_team})}${MAIL_URL?'<p class="mute">Confirmation email bhej di gayi hai (spam folder bhi dekhna).</p>':''}<p class="row" style="margin-bottom:0;justify-content:flex-end"><button class="btn ghost" onclick="waConfirm()">WhatsApp par apne number par save karo</button><button class="btn ghost" onclick="calEv(${id})">Calendar me jodo</button><button class="btn" onclick="closeM();go('home')">Done</button></p>`);
 }
 function joinM(id){
- modal(`<h2 style="margin-top:0">Join ${esc(club(id).name)}</h2><p class="mute">Aap jitne chahe clubs join kar sakte ho.</p><div class="f" style="grid-template-columns:1fr">${personF('j_')}<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" id="j_all" style="width:auto"> Saare clubs me join karo</label></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(()=>doJoin(${id}))">Join karo</button></p>`);
+ modal(`<div class="row"><h2 style="margin:0">Join ${esc(club(id).name)}</h2>${stu.roll?`<button class="btn sm ghost" onclick="clearStu('j_')">Form saaf karo</button>`:''}</div><p class="mute">Aap jitne chahe clubs join kar sakte ho.</p><div class="f" style="grid-template-columns:1fr">${personF('j_')}<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" id="j_all" style="width:auto"> Saare clubs me join karo</label></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(()=>doJoin(${id}))">Join karo</button></p>`);
 }
 async function doJoin(id){
  const v=k=>$('#j_'+k).value.trim();
  const d={p_name:v('name'),p_roll:v('roll'),p_branch:v('branch'),p_institute:v('inst'),p_gender:v('gender'),p_email:v('email'),p_phone:v('phone')};
  if(!d.p_name||!d.p_roll||!d.p_email||!d.p_phone)return toast('Naam, roll, email aur phone zaruri hain');
+ saveStu({name:d.p_name,roll:d.p_roll,branch:d.p_branch,inst:d.p_institute,gender:d.p_gender,email:d.p_email,phone:d.p_phone});
  const ids=$('#j_all').checked?db.clubs.map(c=>c.id):[id],added=[],skip=[];
  for(const cid of ids){const r=await rpc('join_club',{...d,p_club:cid});(r==='ok'?added:skip).push(club(cid).name+(r==='ok'?'':' ('+r+')'))}
  await load();
@@ -232,31 +572,43 @@ async function doJoin(id){
  modal(`<h2 style="margin-top:0">Welcome!</h2><p>Aap ye clubs join kar chuke ho:</p><p><b>${esc(added.join(', '))}</b></p>${skip.length?`<p class="mute">Ye nahi hue: ${esc(skip.join(', '))}</p>`:''}<p class="mute">Aap kisi bhi aur club me bhi join ho sakte ho.</p><p style="text-align:right;margin-bottom:0"><button class="btn" onclick="closeM();go('club',${id})">Done</button></p>`);
 }
 function myM(){
- modal(`<h2 style="margin-top:0">Meri registrations</h2><div class="f" style="grid-template-columns:1fr">${fld('m_roll','Roll number')}${fld('m_phone','Phone number','tel')}</div><p><button class="btn" onclick="act(myShow)">Dekho</button></p><div id="m_out"></div><p style="text-align:right;margin-bottom:0"><button class="btn ghost" onclick="closeM()">Band karo</button></p>`);
+ modal(`<h2 style="margin-top:0">Meri registrations</h2><div class="f" style="grid-template-columns:1fr">${fld('m_roll','Roll number','text',stu.roll)}${fld('m_phone','Phone number','tel',stu.phone)}</div><p><button class="btn" onclick="act(myShow)">Dekho</button></p><div id="m_out"></div><p style="text-align:right;margin-bottom:0"><button class="btn ghost" onclick="closeM()">Band karo</button></p>`);
+ if(stu.roll&&stu.phone)act(myShow);
 }
 async function myShow(){
  const ro=$('#m_roll').value.trim(),ph=$('#m_phone').value.trim();
  if(!ro||!ph)return toast('Roll aur phone dono bharein');
+ saveStu({roll:ro,phone:ph});
  const [l,m]=await Promise.all([rpc('my_registrations',{p_roll:ro,p_phone:ph}),rpc('my_clubs',{p_roll:ro,p_phone:ph})]);
- $('#m_out').innerHTML=(m.length?'<h3>Meri clubs</h3><p>'+esc(m.map(x=>x.club_name).join(', '))+'</p>':'')+(l.length?l.map(regCard).join(''):'<p class="mute">Is roll aur phone se koi registration nahi mili.</p>');
+ myR=l;
+ $('#m_out').innerHTML=(m.length?'<h3>Meri clubs</h3><p>'+esc(m.map(x=>x.club_name).join(', '))+'</p>':'')+(l.length?l.map((x,i)=>regCard(x,i)).join(''):'<p class="mute">Is roll aur phone se koi registration nahi mili.</p>');
 }
 // ---------- login ----------
-function loginM(){
- modal(`<h2 style="margin-top:0">Login</h2><div class="f" style="grid-template-columns:1fr">${fld('l_u','Username','text','','jaise: sports ya admin')}<div><label>Password</label><input id="l_p" type="password" autocomplete="current-password"></div><label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" onchange="$('#l_p').type=this.checked?'text':'password'" style="width:auto"> Show password</label></div><p class="mute" style="font-size:14px">Faculty aur admin ke liye. Student ko login nahi chahiye.</p><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(login)">Login</button></p>`);
+function loginM(){if(portalMode==='student')return;gateLoginM('')}
+function gateLoginM(role){
+ if(portalMode==='student')return;
+ const isAdm=role==='admin',title=isAdm?'Admin login':role==='faculty'?'Faculty login':'Login';
+ const sub=isAdm?'Main Admin username aur password daalein.':role==='faculty'?'Apne club ka faculty username aur password daalein.':'Faculty aur admin ke liye. Student ko login nahi chahiye.';
+ const ph=isAdm?'jaise: admin':role==='faculty'?'jaise: sports ya dance':'jaise: sports ya admin';
+ modal(`<h2 style="margin-top:0">${title}</h2><p class="mute" style="margin:4px 0 12px;font-size:14px">${sub}</p><div class="f" style="grid-template-columns:1fr"><div><label>Username</label><input id="l_u" type="text" placeholder="${ph}" onkeydown="if(event.key==='Enter')act(()=>gateAuth('${role}'))"></div><div><label>Password</label><input id="l_p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')act(()=>gateAuth('${role}'))"></div><label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" onchange="$('#l_p').type=this.checked?'text':'password'" style="width:auto"> Show password</label></div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Wapas</button><button class="btn" onclick="act(()=>gateAuth('${role}'))">Login</button></p>`);
+ setTimeout(()=>$('#l_u')?.focus(),40);
 }
 async function profile(){const p=await sb('/rest/v1/profiles?select=role,club_id');if(!p.length)throw new Error('Is account ko koi role nahi mila');me={role:p[0].role,clubId:p[0].club_id}}
-async function login(){
- let u=$('#l_u').value.trim().toLowerCase();const p=$('#l_p').value;
+async function gateAuth(expected){
+ if(portalMode==='student')return;
+ let u=($('#l_u')?.value||'').trim().toLowerCase();const p=$('#l_p')?.value||'';
  if(!u||!p)return toast('Username aur password bharein');
  if(!u.includes('@'))u+='@eventshaper.app';
  const r=await fetch(SB+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({email:u,password:p})});
  const j=await r.json();if(!r.ok)return toast(/not confirmed/i.test(j.msg||j.error_description||j.error_code||'')?'Is account ka email confirm nahi hai':'Username ya password galat hai');
  tok=j.access_token;
- try{await profile()}catch(e){tok=null;return toast(e.message)}
+ try{await profile()}catch(e){tok=null;me=null;return toast(e.message)}
+ if(expected&&me.role!==expected){tok=null;me=null;return toast(expected==='admin'?'Ye Admin account nahi hai':'Ye Faculty account nahi hai')}
+ portalMode=me.role;
  try{sessionStorage.setItem('es_tok',tok)}catch(e){}
- closeM();toast('Login ho gaya');go('dash');
+ closeM();toast('Login ho gaya');enterSite();
 }
-function logout(){me=null;tok=null;R=[];M=[];try{sessionStorage.removeItem('es_tok')}catch(e){}go('home')}
+function logout(){exitRole()}
 // ---------- dashboard ----------
 const canEdit=e=>me&&(me.role==='admin'||e.clubId==me.clubId);
 async function dash(){
@@ -265,7 +617,9 @@ async function dash(){
  try{[R,M]=await Promise.all([sb('/rest/v1/registrations?select=*&order=created_at.desc'),sb('/rest/v1/members?select=*&order=created_at.desc')])}catch(e){return $('#app').innerHTML='<p>'+esc(e.message)+'</p>'}
  const my=db.events.filter(canEdit);let h='';
  if(me.role==='faculty'){const c=club(me.clubId);h+=`<h1 style="font-size:32px">${esc(c.name)} dashboard</h1><p class="mute">Aap sirf apne club ke events aur registrations dekh sakte ho.</p><p><button class="btn" onclick="evM()">Naya event jodo</button></p>`}
- else{h+=`<h1 style="font-size:32px">Main admin</h1><p class="mute">Clubs, faculty details aur sab events yahan se sambhalo.</p><p><button class="btn" onclick="evM()">Naya event jodo</button> <button class="btn ghost" onclick="clubM()">Naya club</button></p>`;h+=reportHTML();
+ else{h+=`<h1 style="font-size:32px">Main admin</h1><p class="mute">Clubs, faculty details aur sab events yahan se sambhalo.</p><p><button class="btn" onclick="evM()">Naya event jodo</button> <button class="btn ghost" onclick="clubM()">Naya club</button> <button class="btn ghost" onclick="siteQrM()">Website QR code</button></p>`;
+  h+=`<div class="panel" style="border-left:6px solid #E8830C"><b>Notice board</b><p class="mute" style="margin:4px 0 10px">Home page ke upar sabhi students ko dikhne wali suchna.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="adm_nt" type="text" value="${esc(db.notice)}" placeholder="Jaise: Volleyball trials kal 2:00 PM par Ground B me honge..." style="flex:1;min-width:200px"><button class="btn sm" onclick="act(()=>saveNotice(false))">Save</button>${db.notice?`<button class="btn sm ghost" onclick="act(()=>saveNotice(true))">Hatao</button>`:''}</div></div>`;
+  h+=reportHTML();
   h+=db.clubs.map(c=>`<div class="panel" style="border-left:6px solid ${c.color}"><div class="f">${fld('c'+c.id+'_name','Club ka naam','text',c.name)}${fld('c'+c.id+'_tag','Tag','text',c.tag)}${fld('c'+c.id+'_fname','Faculty ke naam','text',c.fname)}${fld('c'+c.id+'_fphone','Faculty ka number','text',c.fphone)}${fld('c'+c.id+'_color','Rang','color',c.color)}<div style="grid-column:1/-1">${fld('c'+c.id+'_intro','Intro','text',c.intro)}</div></div><p style="margin-bottom:0"><button class="btn sm" onclick="act(()=>saveClub(${c.id}))">Save</button></p></div>`).join('')}
  h+=`<h2>Events aur registrations</h2>`+(my.length?my.map(evPanel).join(''):'<p class="mute">Abhi koi event nahi.</p>');
  const mc=me.role==='admin'?db.clubs:[club(me.clubId)];h+=mc.filter(c=>M.some(m=>m.club_id==c.id)).map(memTable).join('');
@@ -274,10 +628,49 @@ async function dash(){
  $('#app').innerHTML=nt+h;
 }
 function evPanel(e){
- const rs=R.filter(r=>r.event_id==e.id),c=club(e.clubId)||{};
- return `<div class="panel"><div class="row"><div><h3>${esc(e.title)}</h3><small class="mute">${esc(c.name)} · ${fdate(e.date)} · ${rs.filter(r=>r.status!=='cancelled').length}/${e.seats} registrations</small></div>
- <div><button class="btn sm ghost" onclick="csv(${e.id})">CSV download</button> <button class="btn sm" onclick="evM(${e.id})">Edit</button> <button class="btn sm red" onclick="act(()=>delEv(${e.id}))">Delete</button></div></div>
- ${rs.length?`<div class="scroll"><table><tr><th>Naam</th><th>Roll</th><th>Branch</th><th>Institute</th><th>Gender</th><th>Email</th><th>Phone</th><th>Team</th><th>Status</th><th>Action</th></tr>${rs.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.roll)}</td><td>${esc(r.branch)}</td><td>${esc(r.institute)}</td><td>${esc(r.gender)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.team)}</td><td>${esc(stTxt(r.status))}</td><td><button class="btn sm" onclick="act(()=>setReg(${r.id},'accepted'))">Accept</button> <button class="btn sm red" onclick="act(()=>setReg(${r.id},'cancelled'))">Cancel</button> <button class="btn sm ghost" onclick="waStatus(${r.id})">WhatsApp par batao</button></td></tr>`).join('')}</table></div>`:'<p class="mute" style="margin-bottom:0">Abhi koi registration nahi.</p>'}</div>`;
+ const rs=R.filter(r=>r.event_id==e.id),c=club(e.clubId)||{},pend=rs.filter(r=>!r.status||r.status==='pending').length;
+ const tm=e.time?`, ${esc(ftime(e.time))}${e.end?' - '+esc(ftime(e.end)):''}`:'';
+ return `<div class="panel"><div class="row"><div><h3>${esc(e.title)}</h3><small class="mute">${esc(c.name)} · ${fdate(e.date)}${tm} · ${rs.filter(r=>r.status!=='cancelled').length}/${e.seats} registrations</small></div>
+ <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button> <button class="btn sm ghost" onclick="winM(${e.id})">Winners</button> <button class="btn sm ghost" onclick="csv(${e.id})">CSV download</button> <button class="btn sm" onclick="evM(${e.id})">Edit</button> <button class="btn sm red" onclick="act(()=>delEv(${e.id}))">Delete</button></div></div>${winHTML(e)}
+ ${rs.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0"><input id="rq_${e.id}" type="search" placeholder="Naam, roll ya branch dhundho..." oninput="fltReg(${e.id})" style="flex:1;min-width:180px"><select id="rs_${e.id}" onchange="fltReg(${e.id})" style="width:auto"><option value="">Saare status</option><option value="pending">Intezar (pending)</option><option value="accepted">Accept ho gayi</option><option value="cancelled">Cancel ho gayi</option></select>${pend?`<button class="btn sm" onclick="act(()=>acceptAll(${e.id}))">Sabhi pending accept karo</button>`:''}</div><div class="scroll"><table id="rt_${e.id}"><tr><th>Naam</th><th>Roll</th><th>Branch</th><th>Institute</th><th>Gender</th><th>Email</th><th>Phone</th><th>Team</th><th>Status</th><th>Action</th></tr>${rs.map(r=>`<tr data-st="${esc(r.status||'pending')}" data-q="${esc((r.name+' '+r.roll+' '+r.branch+' '+r.institute+' '+r.phone).toLowerCase())}"><td>${esc(r.name)}</td><td>${esc(r.roll)}</td><td>${esc(r.branch)}</td><td>${esc(r.institute)}</td><td>${esc(r.gender)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.team)}</td><td>${esc(stTxt(r.status))}</td><td><button class="btn sm" onclick="act(()=>setReg(${r.id},'accepted'))">Accept</button> <button class="btn sm red" onclick="act(()=>setReg(${r.id},'cancelled'))">Cancel</button> <button class="btn sm ghost" onclick="waStatus(${r.id})">WhatsApp par batao</button>${r.status==='accepted'?` <button class="btn sm ghost" onclick="act(()=>certById(${r.id}))">Certificate</button>`:''}</td></tr>`).join('')}</table></div>`:'<p class="mute" style="margin-bottom:0">Abhi koi registration nahi.</p>'}</div>`;
+}
+function fltReg(id){
+ const q=($('#rq_'+id)?.value||'').trim().toLowerCase(),st=$('#rs_'+id)?.value||'';
+ document.querySelectorAll('#rt_'+id+' tr[data-st]').forEach(tr=>{
+  const ok=(!st||tr.dataset.st===st)&&(!q||tr.dataset.q.includes(q));
+  tr.style.display=ok?'':'none';
+ });
+}
+async function acceptAll(evId){
+ const pend=R.filter(r=>r.event_id==evId&&(!r.status||r.status==='pending'));
+ if(!pend.length||!confirm(tr('Sabhi pending registrations accept karni hain?')))return;
+ await sb('/rest/v1/registrations?id=in.('+pend.map(x=>x.id).join(',')+')',{m:'PATCH',body:{status:'accepted'}});
+ pend.forEach(notifyStatus);await load();toast('Sabhi pending registrations accept ho gayi');dash();
+}
+function certById(rid){
+ const r=R.find(x=>x.id==rid);if(!r)return;
+ const e=db.events.find(x=>x.id==r.event_id)||{},c=club(e.clubId)||{};
+ return certDl({...r,event_title:e.title,club_name:c.name,event_date:e.date});
+}
+function winM(id){
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const acc=R.filter(r=>r.event_id==id&&r.status==='accepted');
+ const dl=`<datalist id="wl_${id}">${acc.map(r=>`<option value="${esc(r.name+' ('+r.roll+')')}">`).join('')}</datalist>`;
+ const w=e.win||['','',''];
+ const inp=(i,l)=>`<div><label>${l}</label><input id="w_${i}" list="wl_${id}" value="${esc(w[i]||'')}" placeholder="Rahul Sharma (0818CS...)"></div>`;
+ modal(`<h2 style="margin-top:0">Event ke winners</h2><p class="mute" style="margin:4px 0 10px">${esc(e.title)}</p>${dl}<div class="f" style="grid-template-columns:1fr">${inp(0,'1st Winner (Naam aur Roll)')}${inp(1,'2nd Winner (Naam aur Roll)')}${inp(2,'3rd Winner (Naam aur Roll)')}</div><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Cancel</button><button class="btn" onclick="act(()=>saveWin(${id}))">Save</button></p>`);
+}
+async function saveWin(id){
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const w=[0,1,2].map(i=>($('#w_'+i)?.value||'').trim());
+ await sb('/rest/v1/events?id=eq.'+id,{m:'PATCH',body:{note:packNote(e.note,w)||null}});
+ await load();closeM();toast('Winners save ho gaye');dash();
+}
+async function saveNotice(clear){
+ const c0=db.clubs[0];if(!c0)return;
+ const v=clear?'':($('#adm_nt')?.value||'').trim();
+ await sb('/rest/v1/clubs?id=eq.'+c0.id,{m:'PATCH',body:{intro:packIntro(c0.intro,v)}});
+ await load();toast(clear?'Notice hata diya':'Notice save ho gaya');dash();
 }
 function memTable(c){
  const l=M.filter(m=>m.club_id==c.id);
@@ -296,13 +689,13 @@ function notifyStatus(r){
 }
 function waStatus(id){
  const r=R.find(x=>x.id==id),e=r&&db.events.find(x=>x.id==r.event_id);if(!e)return;
- const c=club(e.clubId)||{},en={accepted:'accepted',cancelled:'cancelled'}[r.status]||'pending',hi={accepted:'स्वीकृत',cancelled:'रद्द'}[r.status]||'प्रतीक्षा में';
- const t=`EventShaper: Hello ${r.name}, your registration for "${e.title}" (${c.name}) is ${en}.\n${fdate(e.date)}, ${e.time} | ${e.venue}\n\nEventShaper: नमस्ते ${r.name}, "${e.title}" के लिए आपका रजिस्ट्रेशन ${hi} है।`;
+ const c=club(e.clubId)||{},en={accepted:'accepted',cancelled:'cancelled'}[r.status]||'pending',hi={accepted:'स्वीकृत',cancelled:'रद्द'}[r.status]||'प्रतीक्षा में',tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+ const t=`EventShaper: Hello ${r.name}, your registration for "${e.title}" (${c.name}) is ${en}.\n${fdate(e.date)}, ${tm} | ${e.venue}\n\nEventShaper: नमस्ते ${r.name}, "${e.title}" के लिए आपका रजिस्ट्रेशन ${hi} है।`;
  window.open('https://wa.me/91'+String(r.phone).replace(/\D/g,'').slice(-10)+'?text='+encodeURIComponent(t),'_blank','noopener');
 }
 async function removeMem(id){if(!confirm(tr('Is member ko club se hatana hai?')))return;await sb('/rest/v1/members?id=eq.'+id,{m:'DELETE'});await load();dash()}
 async function delEv(id){if(!confirm(tr('Event aur uski registrations delete ho jayengi. Pakka?')))return;await sb('/rest/v1/events?id=eq.'+id,{m:'DELETE'});await load();dash()}
-async function saveClub(id){const v=k=>$('#c'+id+'_'+k).value.trim();await sb('/rest/v1/clubs?id=eq.'+id,{m:'PATCH',body:{name:v('name'),tag:v('tag'),intro:v('intro'),color:v('color'),faculty_name:v('fname'),faculty_phone:v('fphone')}});await load();toast('Club save ho gaya')}
+async function saveClub(id){const v=k=>$('#c'+id+'_'+k).value.trim(),intro=db.clubs[0]&&db.clubs[0].id==id?packIntro(v('intro'),db.notice):v('intro');await sb('/rest/v1/clubs?id=eq.'+id,{m:'PATCH',body:{name:v('name'),tag:v('tag'),intro,color:v('color'),faculty_name:v('fname'),faculty_phone:v('fphone')}});await load();toast('Club save ho gaya')}
 function csv(id){
  const e=db.events.find(x=>x.id==id),q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
  const rows=[['Naam','Roll','Branch','Institute','Gender','Email','Phone','Team','Status'],...R.filter(r=>r.event_id==id).map(r=>[r.name,r.roll,r.branch,r.institute,r.gender,r.email,r.phone,r.team,stTxt(r.status)])];
@@ -321,7 +714,7 @@ function evM(id){
  const e=id?db.events.find(x=>x.id==id):{type:'Solo',team:1};tmp.ev=null;
  modal(`<h2 style="margin-top:0">${id?'Event edit karo':'Naya event'}</h2><div class="f" style="grid-template-columns:1fr">
  ${me.role==='admin'&&!id?`<div><label>Club</label><select id="e_club">${db.clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>`:''}
- ${fld('e_title','Event ka naam','text',e.title)}${fld('e_date','Date','date',e.date)}${fld('e_time','Time','time',e.time)}${fld('e_end','End time (optional)','time',e.end)}${fld('e_venue','Venue','text',e.venue)}${fld('e_last','Registration last date','date',e.last)}${fld('e_seats','Seats','number',e.seats)}
+ ${fld('e_title','Event ka naam','text',e.title)}${fld('e_date','Date','date',e.date)}<div><label>Time</label><input id="e_time" type="time" value="${esc(e.time||'')}" oninput="$('#e_tp').textContent=ftime(this.value)"><small id="e_tp" class="mute">${esc(ftime(e.time))}</small></div><div><label>End time (optional)</label><input id="e_end" type="time" value="${esc(e.end||'')}" oninput="$('#e_ep').textContent=ftime(this.value)"><small id="e_ep" class="mute">${esc(ftime(e.end))}</small></div>${fld('e_venue','Venue','text',e.venue)}${fld('e_last','Registration last date','date',e.last)}${fld('e_seats','Seats','number',e.seats)}
  <div><label>Type</label><select id="e_type"><option value="Solo"${e.type==='Solo'?' selected':''}>Solo</option><option value="Team"${e.type==='Team'?' selected':''}>Team</option></select></div>${fld('e_team','Team me kitne members','number',e.team)}
  <div><label>Activities</label><textarea id="e_desc" rows="3">${esc(e.desc)}</textarea></div>${fld('e_note','Kya laana hai / note','text',e.note)}
  <div><label>Event ki photo${e.img?' (nayi chunoge to purani badal jayegi)':' (optional)'}</label>${e.img?`<img class="logo" style="height:90px;object-fit:cover;margin-bottom:8px" src="${esc(e.img)}" alt="Abhi ki photo">`:''}<input type="file" accept="image/*" onchange="pickImg(this)">${e.img?'<label style="display:flex;gap:8px;align-items:center;font-weight:500;margin-top:8px"><input type="checkbox" id="e_noimg" style="width:auto"> Photo hata do</label>':''}</div></div>
@@ -331,7 +724,8 @@ async function saveEv(id){
  let newId=0;
  const v=k=>$('#e_'+k).value.trim(),seats=parseInt(v('seats'))||0;
  if(!v('title')||!v('date')||!v('time')||!v('venue')||!v('last')||seats<1)return toast('Naam, date, time, venue, last date aur seats bharein');
- const o={title:v('title'),event_date:v('date'),start_time:v('time'),end_time:v('end')||null,venue:v('venue'),last_date:v('last'),seats,type:v('type'),team_size:parseInt(v('team'))||1,description:v('desc'),note:v('note')||null};
+ const oldE=id?db.events.find(x=>x.id==id):null,packed=packNote(v('note'),oldE?oldE.win:null);
+ const o={title:v('title'),event_date:v('date'),start_time:v('time'),end_time:v('end')||null,venue:v('venue'),last_date:v('last'),seats,type:v('type'),team_size:parseInt(v('team'))||1,description:v('desc'),note:packed||null};
  if(tmp.ev)o.image=await upload(tmp.ev,'events');else if($('#e_noimg')&&$('#e_noimg').checked)o.image=null;
  if(id)await sb('/rest/v1/events?id=eq.'+id,{m:'PATCH',body:o});
  else{o.club_id=me.role==='admin'?parseInt(v('club')):me.clubId;const rr=await sb('/rest/v1/events',{m:'POST',body:o,rep:true});newId=rr&&rr[0]?rr[0].id:0}
@@ -353,7 +747,7 @@ const uname=e=>(e||'').replace('@eventshaper.app','');
 async function facM(){
  const F=await rpc('admin_list_faculty');
  modal(`<h2 style="margin-top:0">Faculty accounts</h2><div class="panel"><b>Naya faculty account</b><div class="f" style="grid-template-columns:1fr;margin-top:10px">${fld('nf_user','Username','text','','jaise: dance')}${fld('nf_pass','Password (min 6)','text')}<div><label>Club</label><select id="nf_club">${db.clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div></div><p style="margin:10px 0 0"><button class="btn sm" onclick="act(addFac)">Account banao</button></p></div>`
- +F.map(f=>`<div class="panel"><b>${esc(f.club_name)}</b> <span class="mute">(${esc(uname(f.email))})</span><p style="margin:6px 0">${f.pw_changed_at?`<span>Password faculty ne badla:</span> <b>${esc(new Date(f.pw_changed_at).toLocaleString())}</b>`:f.temp_password?`<span>Temporary password:</span> <b>${esc(f.temp_password)}</b> <span>(faculty ne abhi nahi badla)</span>`:'<span>Password admin ko nahi pata. Naya set karo.</span>'}</p><div style="display:flex;gap:10px;flex-wrap:wrap"><input id="pw_${f.user_id}" type="text" autocomplete="off" placeholder="Naya password (min 6)" style="flex:1;min-width:150px"><button class="btn sm" onclick="act(()=>setPw('${f.user_id}'))">Password badlo</button></div></div>`).join('')
+ +F.map(f=>`<div class="panel"><b>${esc(f.club_name)}</b> <span class="mute">(${esc(uname(f.email))})</span><p style="margin:6px 0">${f.pw_changed_at?`<span>Password faculty ne badla:</span> <b>${esc(new Date(f.pw_changed_at).toLocaleString(lang==='hi'?'hi-IN':'en-IN',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true}))}</b>`:f.temp_password?`<span>Temporary password:</span> <b>${esc(f.temp_password)}</b> <span>(faculty ne abhi nahi badla)</span>`:'<span>Password admin ko nahi pata. Naya set karo.</span>'}</p><div style="display:flex;gap:10px;flex-wrap:wrap"><input id="pw_${f.user_id}" type="text" autocomplete="off" placeholder="Naya password (min 6)" style="flex:1;min-width:150px"><button class="btn sm" onclick="act(()=>setPw('${f.user_id}'))">Password badlo</button></div></div>`).join('')
  +`<p style="text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
 }
 async function setPw(uid){
@@ -460,7 +854,60 @@ const D=[
 ["Club save ho gaya","Club saved","क्लब सेव हो गया"],["Naya club ban gaya","New club created","नया क्लब बन गया"],["Club ka naam bharein","Enter the club name","क्लब का नाम भरें"],["Sahi link daalo (https:// se shuru)","Enter a valid link (starting with https://)","सही लिंक डालें (https:// से शुरू)"],
 ["Photo upload nahi hui","Photo upload failed","फोटो अपलोड नहीं हुई"],["Photo chun li","Photo selected","फोटो चुन ली गई"],["Photo nahi mili","No photo found","फोटो नहीं मिली"],["Logo chun liya","Logo selected","लोगो चुन लिया गया"],["File nahi mili","No file found","फ़ाइल नहीं मिली"],
 ["Pehle logo ki file chuno","Choose a logo file first","पहले लोगो की फ़ाइल चुनें"],["Logo badal gaya","Logo updated","लोगो बदल गया"],["Kuch gadbad ho gayi","Something went wrong","कुछ गड़बड़ हो गई"],
-["Is member ko club se hatana hai?","Remove this member from the club?","इस सदस्य को क्लब से हटाना है?"],["Event aur uski registrations delete ho jayengi. Pakka?","The event and its registrations will be deleted. Sure?","इवेंट और उसकी रजिस्ट्रेशन हट जाएंगी। पक्का?"]
+["Is member ko club se hatana hai?","Remove this member from the club?","इस सदस्य को क्लब से हटाना है?"],["Event aur uski registrations delete ho jayengi. Pakka?","The event and its registrations will be deleted. Sure?","इवेंट और उसकी रजिस्ट्रेशन हट जाएंगी। पक्का?"],
+["Share aur App","Share & App","शेयर और ऐप"],
+["Website ka QR code ya phone me app install karein.","Website QR code or install the app on your phone.","वेबसाइट का QR कोड या फ़ोन में ऐप इंस्टॉल करें।"],
+["Website QR code","Website QR code","वेबसाइट QR कोड"],
+["Event QR","Event QR","इवेंट QR"],
+["Scan karke EventShaper website kholein.","Scan this QR code to open the EventShaper website.","EventShaper वेबसाइट खोलने के लिए यह QR कोड स्कैन करें।"],
+["Scan karke seedha is event par jayein.","Scan this QR code to open this event directly.","सीधे इस इवेंट पर जाने के लिए यह QR कोड स्कैन करें।"],
+["QR download karo","Download QR poster","QR डाउनलोड करें"],
+["Link copy karo","Copy link","लिंक कॉपी करें"],
+["Link copy ho gaya","Link copied","लिंक कॉपी हो गया"],
+["Students ko batane ke liye is event ko apne WhatsApp group me share karo ya QR download karo.","Share this event in your WhatsApp group or download its QR poster for students.","छात्रों को बताने के लिए इस इवेंट को व्हाट्सऐप ग्रुप में शेयर करें या इसका QR डाउनलोड करें।"],
+["Certificate download karo","Download certificate","सर्टिफिकेट डाउनलोड करें"],
+["Certificate","Certificate","सर्टिफिकेट"],
+["Certificate event wale din se download hoga.","Certificate will be available from the event date.","सर्टिफिकेट इवेंट वाले दिन से डाउनलोड होगा।"],
+["Form saaf karo","Clear form","फ़ॉर्म साफ़ करें"],
+["Form saaf ho gaya","Saved details cleared","फ़ॉर्म साफ़ हो गया"],
+["Naam, roll ya branch dhundho...","Search name, roll or branch...","नाम, रोल या ब्रांच खोजें..."],
+["Saare status","All statuses","सभी स्टेटस"],
+["Sabhi pending accept karo","Accept all pending","सभी प्रतीक्षारत स्वीकार करें"],
+["Sabhi pending registrations accept karni hain?","Accept all pending registrations for this event?","क्या इस इवेंट की सभी प्रतीक्षारत रजिस्ट्रेशन स्वीकार करनी हैं?"],
+["Sabhi pending registrations accept ho gayi","All pending registrations accepted","सभी प्रतीक्षारत रजिस्ट्रेशन स्वीकार हो गईं"],
+["Notice board","Notice board","सूचना पट्ट (नोटिस बोर्ड)"],
+["Home page ke upar sabhi students ko dikhne wali suchna.","Important notice shown to all students at the top of the home page.","होम पेज के ऊपर सभी छात्रों को दिखने वाली ज़रूरी सूचना।"],
+["Jaise: Volleyball trials kal 2:00 PM par Ground B me honge...","e.g. Volleyball trials tomorrow at 2:00 PM in Ground B...","जैसे: वॉलीबॉल ट्रायल्स कल दोपहर 2:00 PM पर ग्राउंड B में होंगे..."],
+["📢 Zaruri suchna:","📢 Important notice:","📢 ज़रूरी सूचना:"],
+["Notice save ho gaya","Notice saved","सूचना सेव हो गई"],
+["Notice hata diya","Notice removed","सूचना हटा दी गई"],
+["Winners","Winners","विजेता"],
+["🏆 Winners:","🏆 Winners:","🏆 विजेता:"],
+["Event ke winners","Event winners","इवेंट के विजेता"],
+["1st Winner (Naam aur Roll)","1st Winner (Name and Roll)","प्रथम विजेता (नाम और रोल)"],
+["2nd Winner (Naam aur Roll)","2nd Winner (Name and Roll)","द्वितीय विजेता (नाम और रोल)"],
+["3rd Winner (Naam aur Roll)","3rd Winner (Name and Roll)","तृतीय विजेता (नाम और रोल)"],
+["Winners save ho gaye","Winners saved","विजेता सेव हो गए"],
+["App install karo","Install app","ऐप इंस्टॉल करें"],
+["Browser menu kholkar 'Add to Home screen' ya 'Install app' chunein.","Open your browser menu and choose 'Add to Home screen' or 'Install app'.","ब्राउज़र मेनू खोलकर 'Add to Home screen' या 'Install app' चुनें।"],
+["EventShaper me aapka swagat hai","Welcome to EventShaper","EventShaper में आपका स्वागत है"],
+["Malwa Institute of Science and Technology (MIST) — College Club Event Portal","Malwa Institute of Science and Technology (MIST) — College Club Event Portal","मालवा इंस्टीट्यूट ऑफ साइंस एंड टेक्नोलॉजी (MIST) — कॉलेज क्लब इवेंट पोर्टल"],
+["Aage badhne ke liye chunein aap kaun hain:","Choose who you are to continue:","आगे बढ़ने के लिए चुनें कि आप कौन हैं:"],
+["Clubs dekhein, events me register karein aur certificate download karein. Login ki zarurat nahi.","Browse clubs, register for events and download certificates. No login required.","क्लब देखें, इवेंट में रजिस्टर करें और सर्टिफिकेट डाउनलोड करें। लॉगिन की ज़रूरत नहीं।"],
+["Student ke roop me jayein","Continue as Student","छात्र के रूप में अंदर जाएं"],
+["Apne club ke events jodein aur registrations accept ya cancel karein. Username aur password zaruri.","Add or edit your club's events and manage student registrations. Username and password required.","अपने क्लब के इवेंट जोड़ें और रजिस्ट्रेशन स्वीकार या रद्द करें। यूज़रनेम और पासवर्ड ज़रूरी।"],
+["Faculty login","Faculty login","फैकल्टी लॉगिन"],
+["Sabhi clubs, faculty accounts, notice board aur reports sambhalein. Admin username aur password zaruri.","Manage all clubs, faculty accounts, notice board and reports. Admin username and password required.","सभी क्लब, फैकल्टी अकाउंट, नोटिस बोर्ड और रिपोर्ट संभालें। एडमिन यूज़रनेम और पासवर्ड ज़रूरी।"],
+["Admin login","Admin login","एडमिन लॉगिन"],
+["Apne club ka faculty username aur password daalein.","Enter your club's faculty username and password.","अपने क्लब का फैकल्टी यूज़रनेम और पासवर्ड डालें।"],
+["Main Admin username aur password daalein.","Enter the Main Admin username and password.","मुख्य एडमिन का यूज़रनेम और पासवर्ड डालें।"],
+["jaise: sports ya dance","e.g. sports or dance","जैसे: sports या dance"],
+["jaise: admin","e.g. admin","जैसे: admin"],
+["Ye Faculty account nahi hai","This is not a Faculty account","यह फैकल्टी अकाउंट नहीं है"],
+["Ye Admin account nahi hai","This is not an Admin account","यह एडमिन अकाउंट नहीं है"],
+["Role badlo","Switch role","भूमिका बदलें"],
+["Wapas","Back","वापस"],
+["EventShaper par college ke sabhi 7 clubs aur unke aane wale events ek jagah dekhein, online register karein aur Meri registrations me apna status aur certificate paayein.","Browse all 7 college clubs and their upcoming events in one place, register online, and check your status and certificates under My registrations.","EventShaper पर कॉलेज के सभी 7 क्लब और उनके आने वाले इवेंट एक जगह देखें, ऑनलाइन रजिस्टर करें और 'मेरी रजिस्ट्रेशन' में अपना स्टेटस व सर्टिफिकेट पाएं।"]
 ];
 const MAP={};D.forEach(x=>MAP[x[0]]=[x[1],x[2]]);
 const PRE=[["Account nahi ban paya:","Could not create the account:","अकाउंट नहीं बन पाया:"],["Naam: ","Name: ","नाम: "],["Roll: ","Roll: ","रोल: "],["Branch: ","Branch: ","ब्रांच: "],["Email: ","Email: ","ईमेल: "],["Phone: ","Phone: ","फ़ोन: "],["Team: ","Team: ","टीम: "],["Last date: ","Last date: ","अंतिम तारीख: "]];
@@ -469,7 +916,7 @@ const PAT=[[/^(\d+) din baaki$/,n=>[`${n} days left`,`${n} दिन बाक�
  [/^(\d+) members$/,a=>[`${a} members`,`${a} सदस्य`]],
  [/^Team of (\d+)$/,a=>[`Team of ${a}`,`${a} सदस्यों की टीम`]],
  [/^(\d+)\/(\d+) seats bhar gayi$/,(a,b)=>[`${a}/${b} seats filled`,`${a}/${b} सीटें भरी`]],
- [/^(.*, \d\d:\d\d) to (\d\d:\d\d)$/,(a,b)=>[`${a} to ${b}`,`${a} से ${b}`]],
+ [/^(.*, \d{1,2}:\d\d [AP]M) to (\d{1,2}:\d\d [AP]M)$/,(a,b)=>[`${a} to ${b}`,`${a} से ${b}`]],
  [/^(.*) ke events$/,a=>[`${a} events`,`${a} के इवेंट`]],
  [/^Join (.*)$/,a=>[`Join ${a}`,`${a} से जुड़ें`]],
  [/^Team members ke naam \((\d+) aur\)$/,a=>[`Team member names (${a} more)`,`टीम सदस्यों के नाम (${a} और)`]],
@@ -500,10 +947,11 @@ function setLang(l){lang=l;try{localStorage.setItem('es_lang',l)}catch(e){}docum
 applyPrefs();
 (async()=>{
  try{await load()}catch(e){$('#app').innerHTML='<div class="panel"><b>Database se connect nahi ho paaya.</b><p class="mute">Internet check karo aur page refresh karo.</p></div>';return}
- try{tok=sessionStorage.getItem('es_tok');if(tok)await profile()}catch(e){tok=null;me=null}
- tx(document.body);document.documentElement.lang=lang;go('home');
+ try{tok=sessionStorage.getItem('es_tok');if(tok){await profile();portalMode=me.role}}catch(e){tok=null;me=null;portalMode=''}
+ tx(document.body);document.documentElement.lang=lang;
+ if(portalMode)enterSite();else go('gate');
 })();
 
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a56ab0fb2f78cd03',t:'MTc5NDAzNzI0Mg=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a56ab0fb2f78cd03',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
