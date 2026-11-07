@@ -76,7 +76,7 @@ const HERO2='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMD
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const logo=(c,cls)=>{const s=c.logo||LOGOS[c.id];return s?`<img class="logo ${cls||''}" src="${s}" alt="${esc(c.name)} logo">`:''};
-let db={clubs:[],events:[],gal:[],notice:''},taken={},mem={},R=[],M=[],myR=[],me=null,tok=null,portalMode='',tmp={},busyF=false,deferredPwa=null;
+let db={clubs:[],events:[],gal:[],notice:'',hero:''},taken={},mem={},R=[],M=[],myR=[],me=null,tok=null,portalMode='',tmp={},busyF=false,posterCache={},imgCache={};
 const club=id=>db.clubs.find(c=>c.id==id);
 const count=id=>taken[id]||0,memCount=id=>mem[id]||0;
 const fdate=d=>{try{return new Date(d+'T00:00').toLocaleDateString((lang==='hi'?'hi-IN':'en-IN'),{day:'numeric',month:'short',year:'numeric'})}catch(e){return d}};
@@ -97,13 +97,13 @@ async function sb(path,o={}){
  return j;
 }
 const rpc=(n,b)=>sb('/rest/v1/rpc/'+n,{m:'POST',body:b||{}});
-const packIntro=(intro,nt)=>String(intro||'').trim()+(nt&&String(nt).trim()?`\n[[NOTICE:${String(nt).trim().replace(/\]\]/g,'')}]]`:'');
+const packIntro=(intro,nt,hr)=>String(intro||'').trim()+(hr&&String(hr).trim()?`\n[[HERO:${String(hr).trim().replace(/\]/g,'')}]]`:'')+(nt&&String(nt).trim()?`\n[[NOTICE:${String(nt).trim().replace(/\]\]/g,'')}]]`:'');
 const packNote=(note,w)=>{const a=(w||[]).map(x=>String(x||'').replace(/[|\]]/g,' ').trim());return String(note||'').trim()+(a.some(Boolean)?`\n[[WIN:${a[0]||''}|${a[1]||''}|${a[2]||''}]]`:'')};
-const mapC=c=>{const raw=c.intro||'',nm=raw.match(/\n?\[\[NOTICE:([\s\S]*?)\]\]$/);return {id:c.id,name:c.name,tag:c.tag||'',intro:raw.replace(/\n?\[\[NOTICE:[\s\S]*?\]\]$/,'').trim(), _nt:nm?nm[1].trim():'',color:c.color||'#2B2F77',fname:c.faculty_name||'',fphone:c.faculty_phone||'',logo:c.logo||''}};
+const mapC=c=>{let raw=c.intro||'';const hm=raw.match(/\n?\[\[HERO:([^\]]+)\]\]/);if(hm)raw=raw.replace(hm[0],'');const nm=raw.match(/\n?\[\[NOTICE:([\s\S]*?)\]\]/);if(nm)raw=raw.replace(nm[0],'');return {id:c.id,name:c.name,tag:c.tag||'',intro:raw.trim(),_nt:nm?nm[1].trim():'',_hr:hm?hm[1].trim():'',color:c.color||'#2B2F77',fname:c.faculty_name||'',fphone:c.faculty_phone||'',logo:c.logo||''}};
 const mapE=e=>{const raw=e.note||'',wm=raw.match(/\n?\[\[WIN:([^\]]*)\]\]$/),w=wm?wm[1].split('|').map(x=>x.trim()):['','',''];while(w.length<3)w.push('');return {id:e.id,clubId:e.club_id,title:e.title,desc:e.description||'',note:raw.replace(/\n?\[\[WIN:[^\]]*\]\]$/,'').trim(),win:w.slice(0,3),date:e.event_date,time:(e.start_time||'').slice(0,5),end:(e.end_time||'').slice(0,5),venue:e.venue||'',last:e.last_date||'',seats:e.seats,type:e.type,team:e.team_size||1,img:e.image||'',created:e.created_at||''}};
 async function load(){
  const [c,e,g,s,m]=await Promise.all([sb('/rest/v1/clubs?select=*&order=id'),sb('/rest/v1/events?select=*&order=event_date,start_time'),sb('/rest/v1/gallery?select=*&order=id'),rpc('seat_counts'),rpc('member_counts')]);
- db.clubs=c.map(mapC);db.notice=(db.clubs[0]&&db.clubs[0]._nt)||'';db.events=e.map(mapE);db.gal=g;taken={};s.forEach(x=>taken[x.event_id]=+x.taken);mem={};m.forEach(x=>mem[x.club_id]=+x.total);
+ db.clubs=c.map(mapC);db.notice=(db.clubs[0]&&db.clubs[0]._nt)||'';db.hero=(db.clubs[0]&&db.clubs[0]._hr)||'';db.events=e.map(mapE);db.gal=g;taken={};s.forEach(x=>taken[x.event_id]=+x.taken);mem={};m.forEach(x=>mem[x.club_id]=+x.total);
 }
 // ---------- preferences ----------
 const PK='eventShaperPrefs';let prefs={theme:'auto',size:'normal'};
@@ -113,37 +113,21 @@ function setPref(k,v){prefs[k]=v;applyPrefs();settingsM()}
 const SK='es_stu';let stu={};try{stu=JSON.parse(localStorage.getItem(SK))||{}}catch(e){}
 function saveStu(o){stu=Object.assign(stu,o);try{localStorage.setItem(SK,JSON.stringify(stu))}catch(e){}}
 function clearStu(p){stu={};try{localStorage.removeItem(SK)}catch(e){}['name','roll','branch','email','phone'].forEach(k=>{const el=$('#'+p+k);if(el)el.value=''});toast('Form saaf ho gaya')}
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPwa=e;nav()});
-async function installApp(){
- if(deferredPwa){deferredPwa.prompt();try{await deferredPwa.userChoice}catch(e){}deferredPwa=null;nav();return}
- toast("Browser menu kholkar 'Add to Home screen' ya 'Install app' chunein.");
-}
-(function initPwa(){
- try{
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2B2F77"/><stop offset="1" stop-color="#B4235A"/></linearGradient></defs><rect width="192" height="192" rx="42" fill="url(#g)"/><rect x="42" y="56" width="108" height="92" rx="14" fill="none" stroke="#fff" stroke-width="11"/><path d="M42 86h108M72 42v28M120 42v28" stroke="#fff" stroke-width="11" stroke-linecap="round"/><circle cx="96" cy="120" r="15" fill="#F5B301"/></svg>`;
-  const ic='data:image/svg+xml;base64,'+btoa(svg);
-  const lk=document.createElement('link');lk.rel='icon';lk.href=ic;document.head.appendChild(lk);
-  const ap=document.createElement('link');ap.rel='apple-touch-icon';ap.href=ic;document.head.appendChild(ap);
-  const mf={name:'EventShaper — MIST',short_name:'EventShaper',start_url:location.href.split('#')[0].split('?')[0],display:'standalone',background_color:'#F2F4F8',theme_color:'#2B2F77',icons:[{src:ic,sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'}]};
-  const ml=document.createElement('link');ml.rel='manifest';ml.href=URL.createObjectURL(new Blob([JSON.stringify(mf)],{type:'application/manifest+json'}));document.head.appendChild(ml);
- }catch(e){}
-})();
 function settingsM(){
  const opt=(k,v,l)=>`<button class="btn sm ${prefs[k]===v?'':'ghost'}" onclick="setPref('${k}','${v}')">${l}</button>`;
  const box=(t,d,b)=>`<div class="panel"><b>${t}</b><p class="mute" style="margin:4px 0 10px">${d}</p><div class="row" style="justify-content:flex-start">${b}</div></div>`;
  modal(`<h2 style="margin-top:0">Settings</h2>`+box('Theme','Screen ka rang chuno.',opt('theme','auto','Auto')+opt('theme','light','Light')+opt('theme','dark','Dark'))
  +box('Text size','Padhne me aasani ke liye.',opt('size','small','Chhota')+opt('size','normal','Normal')+opt('size','large','Bada'))
- +box('Share aur App','Website ka QR code ya phone me app install karein.',`<button class="btn sm" onclick="siteQrM()">Website QR code</button><button class="btn sm ghost" onclick="installApp()">App install karo</button>`)
+ +box('Website QR','Website ka QR code dekhein ya download karein.',`<button class="btn sm" onclick="siteQrM()">Website QR code</button>`)
  +(me&&me.role==='faculty'?box('Faculty settings','Apne club ki gallery.',`<button class="btn sm" onclick="galM()">Club gallery</button><button class="btn sm" onclick="myPwM()">Mera password</button>`):'')
- +(me&&me.role==='admin'?box('Admin settings','Sirf admin ke liye.',`<button class="btn sm" onclick="clubM()">Naya club</button><button class="btn sm" onclick="logoM()">Club logos</button><button class="btn sm" onclick="act(facM)">Faculty accounts</button>`):'')
+ +(me&&me.role==='admin'?box('Admin settings','Sirf admin ke liye.',`<button class="btn sm" onclick="heroM()">EventShaper poster</button><button class="btn sm" onclick="clubM()">Naya club</button><button class="btn sm" onclick="logoM()">Club logos</button><button class="btn sm" onclick="act(facM)">Faculty accounts</button>`):'')
  +`<div class="panel" style="margin-bottom:0"><b>About</b><p class="mute" style="margin:4px 0 0">EventShaper v2.0 | College Club Event Management | Malwa Institute of Science and Technology</p></div><p style="margin:14px 0 0;text-align:right"><button class="btn" onclick="closeM()">Done</button></p>`);
 }
 // ---------- navigation & entry gate ----------
 function nav(){
  const langBtn='<button class="btn sm ghost" onclick="toggleLang()">'+(lang==='hi'?'English':'हिंदी')+'</button>';
  if(!portalMode){$('#navr').innerHTML=langBtn;return}
- const pwa=deferredPwa?'<button class="btn sm ghost" onclick="installApp()">App install karo</button> ':'';
- const common=langBtn+' '+pwa+'<button class="btn sm ghost" onclick="siteQrM()">Website QR code</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> ';
+ const common=langBtn+' <button class="btn sm ghost" onclick="siteQrM()">Website QR code</button> <button class="btn sm ghost" onclick="myM()">Meri registrations</button> <button class="btn sm ghost" onclick="settingsM()">Settings</button> ';
  if(portalMode==='student'){
   $('#navr').innerHTML=common+'<button class="btn sm ghost" onclick="exitRole()">Role badlo</button>';
  }else{
@@ -362,16 +346,156 @@ function siteQrM(){
  modal(`<h2 style="margin-top:0">Website QR code</h2><p class="mute">Scan karke EventShaper website kholein.</p><div style="text-align:center;background:#fff;padding:14px;border-radius:14px;border:1px solid var(--line)"><canvas id="qrc" style="max-width:240px;width:100%;height:auto;display:block;margin:0 auto"></canvas><small style="color:#5A6078;word-break:break-all;display:block;margin-top:8px">${esc(u)}</small></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="copyTxt('${esc(u)}')">Link copy karo</button><button class="btn sm" onclick="dlQr(0)">QR download karo</button><button class="btn ghost sm" onclick="closeM()">Done</button></p>`);
  setTimeout(()=>{const c=$('#qrc');if(c)drawQrCanvas(c,u,280,'#14182F')},20);
 }
-function evQrM(id){
- const e=db.events.find(x=>x.id==id);if(!e)return;
- const c=club(e.clubId)||{},u=evUrl(e.id),tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
- modal(`<h2 style="margin-top:0">${esc(e.title)}</h2><p class="mute" style="margin:4px 0 10px">${esc(c.name)} · ${fdate(e.date)}${tm?', '+esc(tm):''} · ${esc(e.venue)}</p><p class="mute" style="margin:0 0 10px">Scan karke seedha is event par jayein.</p><div style="text-align:center;background:#fff;padding:14px;border-radius:14px;border:2px solid ${c.color||'#2B2F77'}"><canvas id="qrc" style="max-width:240px;width:100%;height:auto;display:block;margin:0 auto"></canvas><small style="color:#5A6078;word-break:break-all;display:block;margin-top:8px">${esc(u)}</small></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="copyTxt('${esc(u)}')">Link copy karo</button><button class="btn sm" onclick="dlQr(${e.id})">QR download karo</button><button class="btn ghost sm" onclick="closeM()">Done</button></p>`);
- setTimeout(()=>{const cv=$('#qrc');if(cv)drawQrCanvas(cv,u,280,'#14182F')},20);
+function rPath(x,px,py,w,h,r){
+ r=Math.min(r,w/2,h/2);x.beginPath();
+ x.moveTo(px+r,py);x.arcTo(px+w,py,px+w,py+h,r);x.arcTo(px+w,py+h,px,py+h,r);x.arcTo(px,py+h,px,py,r);x.arcTo(px,py,px+w,py,r);x.closePath();
 }
-function dlQr(evId){
- const e=evId?db.events.find(x=>x.id==evId):null,c=e?(club(e.clubId)||{}):null;
- const u=e?evUrl(e.id):SITE_URL(),col=(c&&c.color)||'#2B2F77';
- const W=900,H=e?1220:1100,cv=document.createElement('canvas');cv.width=W;cv.height=H;
+async function loadCorsImg(src){
+ if(!src)return null;
+ if(imgCache[src])return imgCache[src];
+ if(src.startsWith('data:')){
+  return new Promise(res=>{const i=new Image();i.onload=()=>{imgCache[src]=i;res(i)};i.onerror=()=>res(null);i.src=src});
+ }
+ try{
+  const ctrl=new AbortController(),to=setTimeout(()=>ctrl.abort(),7000);
+  const r=await fetch(src,{mode:'cors',signal:ctrl.signal});clearTimeout(to);
+  if(!r.ok)throw 0;
+  const b=await r.blob(),ou=URL.createObjectURL(b);
+  return await new Promise(res=>{const i=new Image();i.onload=()=>{URL.revokeObjectURL(ou);imgCache[src]=i;res(i)};i.onerror=()=>{URL.revokeObjectURL(ou);res(null)};i.src=ou});
+ }catch(e){
+  return new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';const t=setTimeout(()=>res(null),5000);i.onload=()=>{clearTimeout(t);imgCache[src]=i;res(i)};i.onerror=()=>{clearTimeout(t);res(null)};i.src=src});
+ }
+}
+function waCaption(e){
+ const c=club(e.clubId)||{},tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+ return `*${e.title}* (${c.name||'MIST'})\n📅 Date: ${fdate(e.date)}${tm?'\n⏰ Time: '+tm:''}\n📍 Venue: ${e.venue}${e.last?'\n⏳ Last Date: '+fdate(e.last):''}\n\n👉 *Register karne ke liye link kholein ya Poster ka QR scan karein:*\n${evUrl(e.id)}`;
+}
+function evCacheKey(e){return [e.id,e.title,e.date,e.time,e.end,e.venue,e.last,e.seats,e.type,e.team,e.img||''].join('|')}
+async function buildEvPosterPack(e){
+ const key=evCacheKey(e);
+ if(posterCache[e.id]&&posterCache[e.id].key===key)return posterCache[e.id];
+ const c=club(e.clubId)||{},col=c.color||'#2B2F77',u=evUrl(e.id);
+ const [pImg,lImg]=await Promise.all([loadCorsImg(e.img),loadCorsImg(c.logo||LOGOS[c.id])]);
+ const W=1080,pW=W-64,pH=pImg?Math.round(Math.min(1180,Math.max(400,pW*(pImg.naturalHeight/pImg.naturalWidth)))):300;
+ const detY=170+pH+24,detH=368,H=detY+detH+52;
+ const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+ const x=cv.getContext('2d');
+ x.fillStyle='#EEF1F8';x.fillRect(0,0,W,H);
+ const hg=x.createLinearGradient(0,0,W,144);hg.addColorStop(0,col);hg.addColorStop(1,'#181C3A');
+ x.fillStyle=hg;x.fillRect(0,0,W,144);
+ x.fillStyle='#F5B301';x.fillRect(0,140,W,6);
+ let tx0=40;
+ if(lImg){
+  rPath(x,32,21,102,102,18);x.fillStyle='#fff';x.fill();
+  const ls=Math.min(90/lImg.naturalWidth,90/lImg.naturalHeight),lw=lImg.naturalWidth*ls,lh=lImg.naturalHeight*ls;
+  x.drawImage(lImg,32+(102-lw)/2,21+(102-lh)/2,lw,lh);tx0=154;
+ }
+ const hMax=W-tx0-36;x.textAlign='left';
+ x.fillStyle='#FFE082';x.font='700 22px system-ui,sans-serif';x.fillText('EventShaper  •  MIST Indore',tx0,50,hMax);
+ x.fillStyle='#fff';x.font='800 35px system-ui,sans-serif';x.fillText(c.name||'College Club Event',tx0,90,hMax);
+ x.fillStyle='#DCE2F7';x.font='500 20px system-ui,sans-serif';x.fillText('Malwa Institute of Science and Technology',tx0,121,hMax);
+ if(pImg){
+  x.save();rPath(x,32,170,pW,pH,22);x.fillStyle='#0F1224';x.fill();x.clip();
+  x.globalAlpha=.26;x.drawImage(pImg,32,170,pW,pH);x.globalAlpha=1;
+  const sc=Math.min(pW/pImg.naturalWidth,pH/pImg.naturalHeight),dw=pImg.naturalWidth*sc,dh=pImg.naturalHeight*sc;
+  x.drawImage(pImg,32+(pW-dw)/2,170+(pH-dh)/2,dw,dh);x.restore();
+  rPath(x,32,170,pW,pH,22);x.strokeStyle='#D0D6E8';x.lineWidth=2;x.stroke();
+ }else{
+  x.save();rPath(x,32,170,pW,pH,22);
+  const bg=x.createLinearGradient(32,170,32+pW,170+pH);bg.addColorStop(0,col);bg.addColorStop(1,'#B4235A');
+  x.fillStyle=bg;x.fill();x.textAlign='center';
+  x.fillStyle='#FFE082';x.font='700 24px system-ui,sans-serif';x.fillText((c.name||'MIST Club').toUpperCase(),W/2,240);
+  x.fillStyle='#fff';x.font='800 46px system-ui,sans-serif';
+  let by=305;for(const ln of wrapLines(x,e.title,pW-90).slice(0,2)){x.fillText(ln,W/2,by);by+=56}
+  x.restore();
+ }
+ rPath(x,32,detY,pW,detH,22);x.fillStyle='#fff';x.fill();x.strokeStyle=col;x.lineWidth=3;x.stroke();
+ x.textAlign='left';let ly=detY+54;
+ x.fillStyle='#14182F';x.font='800 35px system-ui,sans-serif';
+ for(const ln of wrapLines(x,e.title,615).slice(0,2)){x.fillText(ln,58,ly,615);ly+=43}
+ ly+=4;
+ x.fillStyle=col;x.font='700 22px system-ui,sans-serif';
+ x.fillText(`${c.name||'MIST Club'}  •  ${e.type==='Team'?'Team of '+e.team:'Solo Event'}`,58,ly,615);ly+=38;
+ const tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
+ x.fillStyle='#1E2440';x.font='700 24px system-ui,sans-serif';
+ x.fillText(`📅  ${fdate(e.date)}${tm?'  |  '+tm:''}`,58,ly,615);ly+=36;
+ x.fillStyle='#303652';x.font='600 23px system-ui,sans-serif';
+ x.fillText(`📍  Venue: ${e.venue}`,58,ly,615);ly+=34;
+ x.fillStyle='#5A6078';x.font='500 20px system-ui,sans-serif';
+ x.fillText(`👥  Seats: ${e.seats}${e.last?'   |   Last Date: '+fdate(e.last):''}`,58,ly,615);ly+=38;
+ x.fillStyle='#0E8F6B';x.font='700 21px system-ui,sans-serif';
+ x.fillText('📲  QR scan karein ya link se online register karein!',58,ly,615);ly+=28;
+ x.fillStyle='#6E748C';x.font='500 16px system-ui,sans-serif';
+ x.fillText(u,58,ly,615);
+ const qBX=704,qBY=detY+22,qBW=320,qBH=324;
+ rPath(x,qBX,qBY,qBW,qBH,18);x.fillStyle='#FFFFFF';x.fill();x.strokeStyle=col;x.lineWidth=2.5;x.stroke();
+ const qCv=document.createElement('canvas');drawQrCanvas(qCv,u,276,'#14182F');
+ const qW=qCv.width;x.imageSmoothingEnabled=false;
+ x.drawImage(qCv,Math.round(qBX+(qBW-qW)/2),Math.round(qBY+(288-qW)/2+6),qW,qW);
+ x.imageSmoothingEnabled=true;
+ x.textAlign='center';x.fillStyle=col;x.font='800 19px system-ui,sans-serif';
+ x.fillText('SCAN QR TO REGISTER',qBX+qBW/2,qBY+308);
+ x.fillStyle='#6A7089';x.font='600 18px system-ui,sans-serif';
+ x.fillText('EventShaper  •  Principal: Dr. Ram Prasad Dangi, MIST',W/2,H-18);
+ const dataUrl=cv.toDataURL('image/png');
+ const blob=await new Promise(res=>cv.toBlob(b=>res(b),'image/png'));
+ const fname=(e.title.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')||'Event')+'-Poster-QR.png';
+ let file=null;try{file=new File([blob],fname,{type:'image/png'})}catch(err){}
+ const pack={key,cv,dataUrl,blob,file,fname};
+ posterCache[e.id]=pack;return pack;
+}
+function canFileShare(file){
+ try{return !!(file&&navigator.canShare&&navigator.share&&navigator.canShare({files:[file]}))}catch(e){return false}
+}
+function openPosterModal(id,created){
+ if(!me)return;
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const u=evUrl(e.id),hd=created?'Event ban gaya!':'Event Poster aur QR';
+ modal(`<h2 style="margin-top:0">${hd}</h2><p class="mute" style="margin:4px 0 10px">WhatsApp par share karne ya QR bhejne par is event ka <b>Poster + QR</b> saath jayega.</p><div id="evp_wrap" style="text-align:center;background:var(--bg);padding:10px;border-radius:14px;border:1px solid var(--line);min-height:220px;display:flex;align-items:center;justify-content:center"><span class="mute">Poster + QR taiyar ho raha hai...</span></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="copyTxt('${esc(u)}')">Link copy karo</button><button id="evp_dl" class="btn ghost sm" onclick="dlQr(${e.id})" disabled>Poster + QR download</button><button id="evp_wa" class="btn sm" onclick="sendWaPoster(${e.id})" disabled>WhatsApp par Poster + QR bhejo</button></p><p style="text-align:right;margin:10px 0 0"><button class="btn ghost sm" onclick="closeM()">Done</button></p>`);
+ buildEvPosterPack(e).then(pk=>{
+  const w=$('#evp_wrap');if(!w)return;
+  w.innerHTML=`<img src="${pk.dataUrl}" alt="${esc(e.title)} Poster QR" style="max-width:100%;max-height:56vh;width:auto;height:auto;border-radius:10px;display:block;margin:0 auto;box-shadow:0 6px 20px #0002">`;
+  const b1=$('#evp_dl'),b2=$('#evp_wa');if(b1)b1.disabled=false;if(b2)b2.disabled=false;
+ });
+}
+function evQrM(id){if(!me)return;openPosterModal(id,false)}
+function shareM(id){if(!me)return;openPosterModal(id,true)}
+function shareEv(id){
+ if(!me)return;
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const pk=posterCache[e.id];
+ if(pk&&pk.key===evCacheKey(e)&&canFileShare(pk.file)){
+  navigator.share({files:[pk.file],title:e.title,text:waCaption(e)}).catch(()=>{});
+  return;
+ }
+ openPosterModal(id,false);
+}
+function sendWaPoster(id){
+ if(!me)return;
+ const e=db.events.find(x=>x.id==id);if(!e)return;
+ const pk=posterCache[e.id];if(!pk)return;
+ const cap=waCaption(e);
+ if(canFileShare(pk.file)){
+  navigator.share({files:[pk.file],title:e.title,text:cap}).catch(()=>{});
+  return;
+ }
+ window.open('https://wa.me/?text='+encodeURIComponent(cap),'_blank','noopener');
+ const dl=()=>{const a=document.createElement('a');a.href=pk.dataUrl;a.download=pk.fname;a.click()};
+ if(navigator.clipboard&&window.ClipboardItem&&pk.blob){
+  navigator.clipboard.write([new ClipboardItem({'image/png':pk.blob})]).then(()=>{dl();toast('Poster + QR copy aur download ho gaya! WhatsApp chat me Ctrl+V dabayein.')}).catch(()=>{dl();toast('Poster + QR download ho gaya! WhatsApp me photo attach karein.')});
+ }else{
+  dl();toast('Poster + QR download ho gaya! WhatsApp me photo attach karein.');
+ }
+}
+async function dlQr(evId){
+ if(evId){
+  if(!me)return;
+  const e=db.events.find(x=>x.id==evId);if(!e)return;
+  const pk=await buildEvPosterPack(e);
+  const a=document.createElement('a');a.href=pk.dataUrl;a.download=pk.fname;a.click();
+  return;
+ }
+ const u=SITE_URL(),col='#2B2F77',W=900,H=1100,cv=document.createElement('canvas');cv.width=W;cv.height=H;
  const x=cv.getContext('2d');
  x.fillStyle='#F4F6FB';x.fillRect(0,0,W,H);
  const g=x.createLinearGradient(0,0,W,220);g.addColorStop(0,col);g.addColorStop(1,'#B4235A');
@@ -379,46 +503,24 @@ function dlQr(evId){
  x.fillStyle='#fff';x.textAlign='center';
  x.font='800 44px system-ui,sans-serif';x.fillText('EventShaper — MIST',W/2,95);
  x.font='500 24px system-ui,sans-serif';x.fillText('Malwa Institute of Science and Technology',W/2,140);
- x.font='700 22px system-ui,sans-serif';x.fillStyle='#FFE082';x.fillText(e?(c.name||'College Club Event'):'Official College Club Event Portal',W/2,185);
- let y=275;
- if(e){
-  x.fillStyle='#14182F';x.font='800 38px system-ui,sans-serif';
-  for(const ln of wrapLines(x,e.title,780).slice(0,2)){x.fillText(ln,W/2,y);y+=46}
-  const tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
-  x.fillStyle='#5A6078';x.font='600 24px system-ui,sans-serif';
-  x.fillText(`${fdate(e.date)}${tm?'  |  '+tm:''}  |  ${e.venue}`,W/2,y+8);y+=55;
- }else{
-  x.fillStyle='#14182F';x.font='800 34px system-ui,sans-serif';
-  x.fillText('Scan QR to Browse All 7 Clubs & Events',W/2,y+15);y+=65;
- }
+ x.font='700 22px system-ui,sans-serif';x.fillStyle='#FFE082';x.fillText('Official College Club Event Portal',W/2,185);
+ let y=290;
+ x.fillStyle='#14182F';x.font='800 34px system-ui,sans-serif';
+ x.fillText('Scan QR to Browse All 7 Clubs & Events',W/2,y);y+=50;
  const qCv=document.createElement('canvas');drawQrCanvas(qCv,u,520,'#14182F');
  const qS=520,qX=(W-qS)/2;
- x.fillStyle='#fff';x.strokeStyle=col;x.lineWidth=6;
- if(x.roundRect){x.beginPath();x.roundRect(qX-24,y,qS+48,qS+48,24);x.fill();x.stroke()}else{x.fillRect(qX-24,y,qS+48,qS+48);x.strokeRect(qX-24,y,qS+48,qS+48)}
- x.drawImage(qCv,qX,y+24,qS,qS);
- y+=qS+95;
- x.fillStyle=col;x.font='700 26px system-ui,sans-serif';
- x.fillText(e?'Scan QR with Phone Camera to Open Event & Register':'Scan QR with Phone Camera to Open EventShaper',W/2,y);
- x.fillStyle='#5A6078';x.font='500 19px system-ui,sans-serif';
- x.fillText(u,W/2,y+38);
- x.fillStyle='#8A90A8';x.font='500 18px system-ui,sans-serif';
- x.fillText('Principal: Dr. Ram Prasad Dangi, MIST',W/2,H-28);
- const a=document.createElement('a');a.href=cv.toDataURL('image/png');
- a.download=(e?e.title.replace(/[^a-z0-9]+/gi,'-'):'EventShaper-Website')+'-QR.png';a.click();
+ rPath(x,qX-24,y,qS+48,qS+48,24);x.fillStyle='#fff';x.fill();x.strokeStyle=col;x.lineWidth=6;x.stroke();
+ x.drawImage(qCv,qX,y+24,qS,qS);y+=qS+95;
+ x.fillStyle=col;x.font='700 26px system-ui,sans-serif';x.fillText('Scan QR with Phone Camera to Open EventShaper',W/2,y);
+ x.fillStyle='#5A6078';x.font='500 19px system-ui,sans-serif';x.fillText(u,W/2,y+38);
+ x.fillStyle='#8A90A8';x.font='500 18px system-ui,sans-serif';x.fillText('Principal: Dr. Ram Prasad Dangi, MIST',W/2,H-28);
+ const a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download='EventShaper-Website-QR.png';a.click();
 }
 function waConfirm(){
  const r=lastReg;if(!r)return;
  const tm=ftime(r.time)+(r.end?' - '+ftime(r.end):''),u=r.id?evUrl(r.id):SITE_URL();
  const t=lang==='hi'?`EventShaper: आपका रजिस्ट्रेशन मिल गया।\nइवेंट: ${r.title}\nतारीख: ${fdate(r.date)}, ${tm}\nजगह: ${r.venue}\nरोल: ${r.roll}\nस्टेटस: प्रतीक्षा में (फैकल्टी के अप्रूव करने पर बदलेगा)\nलिंक: ${u}`:`EventShaper: your registration is received.\nEvent: ${r.title}\nDate: ${fdate(r.date)}, ${tm}\nVenue: ${r.venue}\nRoll: ${r.roll}\nStatus: Pending (changes when the faculty approves)\nLink: ${u}`;
  window.open('https://wa.me/91'+r.phone.replace(/\D/g,'').slice(-10)+'?text='+encodeURIComponent(t),'_blank','noopener');
-}
-function shareM(id){
- modal(`<h2 style="margin-top:0">Event ban gaya!</h2><p class="mute">Students ko batane ke liye is event ko apne WhatsApp group me share karo ya QR download karo.</p><p class="row" style="margin-bottom:0"><button class="btn ghost" onclick="closeM()">Done</button><button class="btn ghost" onclick="evQrM(${id})">Event QR</button><button class="btn" onclick="shareEv(${id})">WhatsApp par share karo</button></p>`);
-}
-function shareEv(id){
- const e=db.events.find(x=>x.id==id),c=club(e.clubId)||{},tm=ftime(e.time)+(e.end?' - '+ftime(e.end):'');
- const t=`*${e.title}* (${c.name})\n${fdate(e.date)}, ${tm}\n${e.venue}\n\nRegister:\n${evUrl(e.id)}`;
- window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank','noopener');
 }
 function winRank(e,r){
  if(!e||!e.win)return 0;
@@ -514,12 +616,12 @@ function eventCard(e,showClub){
  return `<div id="ev-${e.id}" class="ev" style="--c:${c.color}"><div class="row"><div><h3>${esc(e.title)}</h3>${showClub?`<small class="mute">${esc(c.name)}</small>`:''}</div>
  ${closed?'<span class="chip">Registration band</span>':full?'<span class="chip">Seats full</span>':`<button class="btn sm" onclick="regM(${e.id})">Register</button>`}</div>
  ${e.img?`<img class="logo" style="width:100%;height:auto;max-height:520px;object-fit:contain;margin:6px 0 10px" src="${esc(e.img)}" alt="${esc(e.title)} photo">`:''}<p>${esc(e.desc)}</p>${e.note?`<p><b>Zaruri:</b> ${esc(e.note)}</p>`:''}${winHTML(e)}
- ${isNew(e)?'<span class="chip" style="background:#F5B301;color:#14182F;font-weight:700">Naya</span>':''}<span class="chip" style="font-weight:700">${cd(e)}</span><span class="chip">${fdate(e.date)}, ${esc(ftime(e.time))}${e.end?' to '+esc(ftime(e.end)):''}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span>${e.last?`<span class="chip">Last date: ${fdate(e.last)}</span>`:''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button><button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button><button class="btn sm ghost" onclick="calEv(${e.id})">Calendar me jodo</button></div></div>`;
+ ${isNew(e)?'<span class="chip" style="background:#F5B301;color:#14182F;font-weight:700">Naya</span>':''}<span class="chip" style="font-weight:700">${cd(e)}</span><span class="chip">${fdate(e.date)}, ${esc(ftime(e.time))}${e.end?' to '+esc(ftime(e.end)):''}</span><span class="chip">${esc(e.venue)}</span><span class="chip">${e.type==='Team'?'Team of '+e.team:'Solo'}</span><span class="chip">${n}/${e.seats} seats bhar gayi</span>${e.last?`<span class="chip">Last date: ${fdate(e.last)}</span>`:''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">${me?`<button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button><button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button>`:''}<button class="btn sm ghost" onclick="calEv(${e.id})">Calendar me jodo</button></div></div>`;
 }
 const card3=(col,t,x)=>`<div class="panel" style="border-top:6px solid ${col};margin:0"><b>${t}</b><p class="mute" style="margin:6px 0 0">${x}</p></div>`;
 function home(){
- const isStu=portalMode==='student';
- $('#app').innerHTML=`${db.notice?`<div class="notice"><b>📢 Zaruri suchna:</b> <span style="flex:1">${esc(db.notice)}</span></div>`:''}<img class="hero" src="${HERO2}" alt="EventShaper: College Event Management">
+ const isStu=portalMode==='student',isAdm=me&&me.role==='admin';
+ $('#app').innerHTML=`${db.notice?`<div class="notice"><b>📢 Zaruri suchna:</b> <span style="flex:1">${esc(db.notice)}</span></div>`:''}<img class="hero" style="${isAdm?'margin-bottom:10px':''}" src="${esc(db.hero||HERO2)}" alt="EventShaper: College Event Management">${isAdm?`<p style="text-align:right;margin:0 0 18px"><button class="btn sm ghost" onclick="heroM()">EventShaper poster badlo</button></p>`:''}
  <div class="panel"><div class="row"><h2 style="margin:0 0 8px">What is EventShaper?</h2><button class="btn sm ghost" onclick="siteQrM()">Website QR code</button></div><p style="margin:0">${isStu?'EventShaper par college ke sabhi 7 clubs aur unke aane wale events ek jagah dekhein, online register karein aur Meri registrations me apna status aur certificate paayein.':'EventShaper brings the events of all 7 college clubs into one place. Students pick a club, browse its events and register online. Faculty coordinators manage their own club\'s events and accept or cancel registrations. The admin oversees clubs and faculty.'}</p></div>
  ${isStu?'':`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:8px">${card3('#0B7CC4','Student','Browse events, fill the registration form and check your status under Meri registrations.')}${card3('#0E8F6B','Faculty','Add or edit your club\'s events, and accept or cancel registrations.')}${card3('#B4235A','Admin','Add clubs and events, and update faculty details.')}</div>`}
  ${CHANNEL_URL?`<div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><p class="mute" style="margin:0;flex:1;min-width:200px">Naye events ki update seedha WhatsApp par paao.</p><a class="btn" href="${esc(CHANNEL_URL)}" target="_blank" rel="noopener" style="text-decoration:none">WhatsApp channel join karo</a></div>`:''}<h2>Hamare clubs</h2><div class="grid">${db.clubs.map(c=>`<div class="club" style="--c:${c.color}" onclick="go('club',${c.id})" tabindex="0" onkeydown="if(event.key==='Enter')go('club',${c.id})">${logo(c)}<h3>${esc(c.name)}</h3><small>${esc(c.tag)}</small><p>${esc(c.intro)}</p><p style="font-size:14px;margin:0 0 8px"><b>${esc(c.fname)}</b><br>${esc(c.fphone)}</p><small>${db.events.filter(e=>e.clubId==c.id).length} events | ${memCount(c.id)} members</small></div>`).join('')}</div>
@@ -617,7 +719,7 @@ async function dash(){
  try{[R,M]=await Promise.all([sb('/rest/v1/registrations?select=*&order=created_at.desc'),sb('/rest/v1/members?select=*&order=created_at.desc')])}catch(e){return $('#app').innerHTML='<p>'+esc(e.message)+'</p>'}
  const my=db.events.filter(canEdit);let h='';
  if(me.role==='faculty'){const c=club(me.clubId);h+=`<h1 style="font-size:32px">${esc(c.name)} dashboard</h1><p class="mute">Aap sirf apne club ke events aur registrations dekh sakte ho.</p><p><button class="btn" onclick="evM()">Naya event jodo</button></p>`}
- else{h+=`<h1 style="font-size:32px">Main admin</h1><p class="mute">Clubs, faculty details aur sab events yahan se sambhalo.</p><p><button class="btn" onclick="evM()">Naya event jodo</button> <button class="btn ghost" onclick="clubM()">Naya club</button> <button class="btn ghost" onclick="siteQrM()">Website QR code</button></p>`;
+ else{h+=`<h1 style="font-size:32px">Main admin</h1><p class="mute">Clubs, faculty details aur sab events yahan se sambhalo.</p><p><button class="btn" onclick="evM()">Naya event jodo</button> <button class="btn ghost" onclick="heroM()">EventShaper poster badlo</button> <button class="btn ghost" onclick="clubM()">Naya club</button> <button class="btn ghost" onclick="siteQrM()">Website QR code</button></p>`;
   h+=`<div class="panel" style="border-left:6px solid #E8830C"><b>Notice board</b><p class="mute" style="margin:4px 0 10px">Home page ke upar sabhi students ko dikhne wali suchna.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="adm_nt" type="text" value="${esc(db.notice)}" placeholder="Jaise: Volleyball trials kal 2:00 PM par Ground B me honge..." style="flex:1;min-width:200px"><button class="btn sm" onclick="act(()=>saveNotice(false))">Save</button>${db.notice?`<button class="btn sm ghost" onclick="act(()=>saveNotice(true))">Hatao</button>`:''}</div></div>`;
   h+=reportHTML();
   h+=db.clubs.map(c=>`<div class="panel" style="border-left:6px solid ${c.color}"><div class="f">${fld('c'+c.id+'_name','Club ka naam','text',c.name)}${fld('c'+c.id+'_tag','Tag','text',c.tag)}${fld('c'+c.id+'_fname','Faculty ke naam','text',c.fname)}${fld('c'+c.id+'_fphone','Faculty ka number','text',c.fphone)}${fld('c'+c.id+'_color','Rang','color',c.color)}<div style="grid-column:1/-1">${fld('c'+c.id+'_intro','Intro','text',c.intro)}</div></div><p style="margin-bottom:0"><button class="btn sm" onclick="act(()=>saveClub(${c.id}))">Save</button></p></div>`).join('')}
@@ -631,7 +733,7 @@ function evPanel(e){
  const rs=R.filter(r=>r.event_id==e.id),c=club(e.clubId)||{},pend=rs.filter(r=>!r.status||r.status==='pending').length;
  const tm=e.time?`, ${esc(ftime(e.time))}${e.end?' - '+esc(ftime(e.end)):''}`:'';
  return `<div class="panel"><div class="row"><div><h3>${esc(e.title)}</h3><small class="mute">${esc(c.name)} · ${fdate(e.date)}${tm} · ${rs.filter(r=>r.status!=='cancelled').length}/${e.seats} registrations</small></div>
- <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button> <button class="btn sm ghost" onclick="winM(${e.id})">Winners</button> <button class="btn sm ghost" onclick="csv(${e.id})">CSV download</button> <button class="btn sm" onclick="evM(${e.id})">Edit</button> <button class="btn sm red" onclick="act(()=>delEv(${e.id}))">Delete</button></div></div>${winHTML(e)}
+ <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm ghost" onclick="shareEv(${e.id})">WhatsApp par share karo</button> <button class="btn sm ghost" onclick="evQrM(${e.id})">Event QR</button> <button class="btn sm ghost" onclick="winM(${e.id})">Winners</button> <button class="btn sm ghost" onclick="csv(${e.id})">CSV download</button> <button class="btn sm" onclick="evM(${e.id})">Edit</button> <button class="btn sm red" onclick="act(()=>delEv(${e.id}))">Delete</button></div></div>${winHTML(e)}
  ${rs.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0"><input id="rq_${e.id}" type="search" placeholder="Naam, roll ya branch dhundho..." oninput="fltReg(${e.id})" style="flex:1;min-width:180px"><select id="rs_${e.id}" onchange="fltReg(${e.id})" style="width:auto"><option value="">Saare status</option><option value="pending">Intezar (pending)</option><option value="accepted">Accept ho gayi</option><option value="cancelled">Cancel ho gayi</option></select>${pend?`<button class="btn sm" onclick="act(()=>acceptAll(${e.id}))">Sabhi pending accept karo</button>`:''}</div><div class="scroll"><table id="rt_${e.id}"><tr><th>Naam</th><th>Roll</th><th>Branch</th><th>Institute</th><th>Gender</th><th>Email</th><th>Phone</th><th>Team</th><th>Status</th><th>Action</th></tr>${rs.map(r=>`<tr data-st="${esc(r.status||'pending')}" data-q="${esc((r.name+' '+r.roll+' '+r.branch+' '+r.institute+' '+r.phone).toLowerCase())}"><td>${esc(r.name)}</td><td>${esc(r.roll)}</td><td>${esc(r.branch)}</td><td>${esc(r.institute)}</td><td>${esc(r.gender)}</td><td>${esc(r.email)}</td><td>${esc(r.phone)}</td><td>${esc(r.team)}</td><td>${esc(stTxt(r.status))}</td><td><button class="btn sm" onclick="act(()=>setReg(${r.id},'accepted'))">Accept</button> <button class="btn sm red" onclick="act(()=>setReg(${r.id},'cancelled'))">Cancel</button> <button class="btn sm ghost" onclick="waStatus(${r.id})">WhatsApp par batao</button>${r.status==='accepted'?` <button class="btn sm ghost" onclick="act(()=>certById(${r.id}))">Certificate</button>`:''}</td></tr>`).join('')}</table></div>`:'<p class="mute" style="margin-bottom:0">Abhi koi registration nahi.</p>'}</div>`;
 }
 function fltReg(id){
@@ -669,8 +771,30 @@ async function saveWin(id){
 async function saveNotice(clear){
  const c0=db.clubs[0];if(!c0)return;
  const v=clear?'':($('#adm_nt')?.value||'').trim();
- await sb('/rest/v1/clubs?id=eq.'+c0.id,{m:'PATCH',body:{intro:packIntro(c0.intro,v)}});
+ await sb('/rest/v1/clubs?id=eq.'+c0.id,{m:'PATCH',body:{intro:packIntro(c0.intro,v,db.hero)}});
  await load();toast(clear?'Notice hata diya':'Notice save ho gaya');dash();
+}
+function heroM(){
+ if(!me||me.role!=='admin')return;
+ tmp.hr=null;
+ modal(`<h2 style="margin-top:0">EventShaper poster</h2><p class="mute" style="margin:4px 0 10px">Home page par sabse upar dikhne wala main EventShaper poster badlein.</p><img id="hp_prev" class="hero" style="margin:0 0 12px;max-height:240px;object-fit:contain;background:var(--bg);border:1px solid var(--line)" src="${esc(db.hero||HERO2)}" alt="Current poster"><div><label>Naya poster chunein</label><input type="file" accept="image/*" onchange="pickHero(this)"></div><p class="row" style="margin-top:14px;margin-bottom:0"><button class="btn ghost sm" onclick="closeM()">Cancel</button>${db.hero?`<button class="btn ghost sm" onclick="act(()=>saveHero(true))">Default poster lagao</button>`:''}<button class="btn sm" onclick="act(()=>saveHero(false))">Poster save karo</button></p>`);
+}
+async function pickHero(inp){
+ tmp.hr=inp.files[0]?await readImg(inp.files[0],1600,.88):null;
+ if(tmp.hr){const p=$('#hp_prev');if(p)p.src=URL.createObjectURL(tmp.hr);toast('Poster chun liya')}
+ else toast('Photo nahi mili');
+}
+async function saveHero(reset){
+ if(!me||me.role!=='admin')return;
+ const c0=db.clubs[0];if(!c0)return;
+ let url='';
+ if(!reset){
+  if(!tmp.hr)return toast('Pehle naya poster chunein');
+  url=await upload(tmp.hr,'events');
+ }
+ await sb('/rest/v1/clubs?id=eq.'+c0.id,{m:'PATCH',body:{intro:packIntro(c0.intro,db.notice,url)}});
+ tmp.hr=null;await load();closeM();toast(reset?'Default poster wapas lag gaya':'EventShaper poster badal gaya');
+ if(cur[0]==='dash')dash();else go('home');
 }
 function memTable(c){
  const l=M.filter(m=>m.club_id==c.id);
@@ -695,14 +819,14 @@ function waStatus(id){
 }
 async function removeMem(id){if(!confirm(tr('Is member ko club se hatana hai?')))return;await sb('/rest/v1/members?id=eq.'+id,{m:'DELETE'});await load();dash()}
 async function delEv(id){if(!confirm(tr('Event aur uski registrations delete ho jayengi. Pakka?')))return;await sb('/rest/v1/events?id=eq.'+id,{m:'DELETE'});await load();dash()}
-async function saveClub(id){const v=k=>$('#c'+id+'_'+k).value.trim(),intro=db.clubs[0]&&db.clubs[0].id==id?packIntro(v('intro'),db.notice):v('intro');await sb('/rest/v1/clubs?id=eq.'+id,{m:'PATCH',body:{name:v('name'),tag:v('tag'),intro,color:v('color'),faculty_name:v('fname'),faculty_phone:v('fphone')}});await load();toast('Club save ho gaya')}
+async function saveClub(id){const v=k=>$('#c'+id+'_'+k).value.trim(),intro=db.clubs[0]&&db.clubs[0].id==id?packIntro(v('intro'),db.notice,db.hero):v('intro');await sb('/rest/v1/clubs?id=eq.'+id,{m:'PATCH',body:{name:v('name'),tag:v('tag'),intro,color:v('color'),faculty_name:v('fname'),faculty_phone:v('fphone')}});await load();toast('Club save ho gaya')}
 function csv(id){
  const e=db.events.find(x=>x.id==id),q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
  const rows=[['Naam','Roll','Branch','Institute','Gender','Email','Phone','Team','Status'],...R.filter(r=>r.event_id==id).map(r=>[r.name,r.roll,r.branch,r.institute,r.gender,r.email,r.phone,r.team,stTxt(r.status)])];
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'}));a.download=e.title+'.csv';a.click();
 }
 // ---------- events ----------
-function readImg(f,max){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const s=Math.min(1,max/i.width),c=document.createElement('canvas');c.width=i.width*s;c.height=i.height*s;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(i,0,0,c.width,c.height);c.toBlob(b=>res(b),'image/jpeg',.82)};i.onerror=()=>res(null);i.src=r.result};r.onerror=()=>res(null);r.readAsDataURL(f)})}
+function readImg(f,max,q){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const s=Math.min(1,max/i.width),c=document.createElement('canvas');c.width=i.width*s;c.height=i.height*s;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(i,0,0,c.width,c.height);c.toBlob(b=>res(b),'image/jpeg',q||.82)};i.onerror=()=>res(null);i.src=r.result};r.onerror=()=>res(null);r.readAsDataURL(f)})}
 async function upload(blob,folder){
  const p=folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.jpg';
  const r=await fetch(SB+'/storage/v1/object/club-media/'+p,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+tok,'Content-Type':'image/jpeg'},body:blob});
@@ -855,8 +979,8 @@ const D=[
 ["Photo upload nahi hui","Photo upload failed","फोटो अपलोड नहीं हुई"],["Photo chun li","Photo selected","फोटो चुन ली गई"],["Photo nahi mili","No photo found","फोटो नहीं मिली"],["Logo chun liya","Logo selected","लोगो चुन लिया गया"],["File nahi mili","No file found","फ़ाइल नहीं मिली"],
 ["Pehle logo ki file chuno","Choose a logo file first","पहले लोगो की फ़ाइल चुनें"],["Logo badal gaya","Logo updated","लोगो बदल गया"],["Kuch gadbad ho gayi","Something went wrong","कुछ गड़बड़ हो गई"],
 ["Is member ko club se hatana hai?","Remove this member from the club?","इस सदस्य को क्लब से हटाना है?"],["Event aur uski registrations delete ho jayengi. Pakka?","The event and its registrations will be deleted. Sure?","इवेंट और उसकी रजिस्ट्रेशन हट जाएंगी। पक्का?"],
-["Share aur App","Share & App","शेयर और ऐप"],
-["Website ka QR code ya phone me app install karein.","Website QR code or install the app on your phone.","वेबसाइट का QR कोड या फ़ोन में ऐप इंस्टॉल करें।"],
+["Website QR","Website QR","वेबसाइट QR"],
+["Website ka QR code dekhein ya download karein.","View or download the website QR code.","वेबसाइट का QR कोड देखें या डाउनलोड करें।"],
 ["Website QR code","Website QR code","वेबसाइट QR कोड"],
 ["Event QR","Event QR","इवेंट QR"],
 ["Scan karke EventShaper website kholein.","Scan this QR code to open the EventShaper website.","EventShaper वेबसाइट खोलने के लिए यह QR कोड स्कैन करें।"],
@@ -888,8 +1012,24 @@ const D=[
 ["2nd Winner (Naam aur Roll)","2nd Winner (Name and Roll)","द्वितीय विजेता (नाम और रोल)"],
 ["3rd Winner (Naam aur Roll)","3rd Winner (Name and Roll)","तृतीय विजेता (नाम और रोल)"],
 ["Winners save ho gaye","Winners saved","विजेता सेव हो गए"],
-["App install karo","Install app","ऐप इंस्टॉल करें"],
-["Browser menu kholkar 'Add to Home screen' ya 'Install app' chunein.","Open your browser menu and choose 'Add to Home screen' or 'Install app'.","ब्राउज़र मेनू खोलकर 'Add to Home screen' या 'Install app' चुनें।"],
+["EventShaper poster","EventShaper poster","EventShaper पोस्टर"],
+["EventShaper poster badlo","Change EventShaper poster","EventShaper पोस्टर बदलें"],
+["Home page par sabse upar dikhne wala main EventShaper poster badlein.","Change the main EventShaper banner shown at the top of the Home page.","होम पेज पर सबसे ऊपर दिखने वाला मुख्य EventShaper पोस्टर बदलें।"],
+["Naya poster chunein","Choose new poster","नया पोस्टर चुनें"],
+["Default poster lagao","Restore default poster","डिफ़ॉल्ट पोस्टर लगाएं"],
+["Poster save karo","Save poster","पोस्टर सेव करें"],
+["Poster chun liya","Poster selected","पोस्टर चुन लिया गया"],
+["Pehle naya poster chunein","Choose a new poster first","पहले नया पोस्टर चुनें"],
+["EventShaper poster badal gaya","EventShaper poster updated","EventShaper पोस्टर बदल गया"],
+["Default poster wapas lag gaya","Default poster restored","डिफ़ॉल्ट पोस्टर वापस लग गया"],
+["Event Poster aur QR","Event Poster & QR","इवेंट पोस्टर और QR"],
+["WhatsApp par share karne ya QR bhejne par is event ka ","When sharing on WhatsApp or sending QR, this event's ","WhatsApp पर शेयर करने या QR भेजने पर इस इवेंट का "],
+[" saath jayega."," will be sent along."," साथ जाएगा।"],
+["Poster + QR taiyar ho raha hai...","Preparing Poster + QR...","पोस्टर + QR तैयार हो रहा है..."],
+["Poster + QR download","Download Poster + QR","पोस्टर + QR डाउनलोड"],
+["WhatsApp par Poster + QR bhejo","Send Poster + QR on WhatsApp","WhatsApp पर पोस्टर + QR भेजें"],
+["Poster + QR copy aur download ho gaya! WhatsApp chat me Ctrl+V dabayein.","Poster + QR copied and downloaded! Press Ctrl+V in WhatsApp chat.","पोस्टर + QR कॉपी और डाउनलोड हो गया! WhatsApp चैट में Ctrl+V दबाएं।"],
+["Poster + QR download ho gaya! WhatsApp me photo attach karein.","Poster + QR downloaded! Attach the photo in WhatsApp.","पोस्टर + QR डाउनलोड हो गया! WhatsApp में फ़ोटो अटैच करें।"],
 ["EventShaper me aapka swagat hai","Welcome to EventShaper","EventShaper में आपका स्वागत है"],
 ["Malwa Institute of Science and Technology (MIST) — College Club Event Portal","Malwa Institute of Science and Technology (MIST) — College Club Event Portal","मालवा इंस्टीट्यूट ऑफ साइंस एंड टेक्नोलॉजी (MIST) — कॉलेज क्लब इवेंट पोर्टल"],
 ["Aage badhne ke liye chunein aap kaun hain:","Choose who you are to continue:","आगे बढ़ने के लिए चुनें कि आप कौन हैं:"],
@@ -953,5 +1093,5 @@ applyPrefs();
 })();
 
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a56ab0fb2f78cd03',t:'MTc5NDAzNzI0Mg=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a56ab0fb2f78cd03',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a56aecfdfaeecd03',t:'MTc5NDAzOTcwMA=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a56aecfdfaeecd03',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
